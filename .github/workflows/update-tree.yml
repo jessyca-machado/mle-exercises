@@ -1,0 +1,48 @@
+name: Update repo tree in README
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-tree:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tree
+        run: sudo apt-get update && sudo apt-get install -y tree
+
+      - name: Generate tree
+        run: |
+          tree -a -L 5 -I ".git|node_modules|dist|build|venv|.venv|__pycache__|.pytest_cache" > /tmp/tree.txt
+
+      - name: Update README between markers
+        run: |
+          python - << 'PY'
+          import re, pathlib
+          readme = pathlib.Path("README.md")
+          s = readme.read_text(encoding="utf-8")
+          tree = pathlib.Path("/tmp/tree.txt").read_text(encoding="utf-8").rstrip()
+          block = "```text\n" + tree + "\n```"
+          new = re.sub(r"<!-- TREE:START -->(.|\n)*?<!-- TREE:END -->",
+                       "<!-- TREE:START -->\n" + block + "\n<!-- TREE:END -->",
+                       s)
+          readme.write_text(new, encoding="utf-8")
+          PY
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update repository tree"
+          git push
