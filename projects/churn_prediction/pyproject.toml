@@ -1,0 +1,44 @@
+[project]
+name = "churn_prediction"
+version = "0.1.0"
+description = "Projeto de ML para previsão de churn"
+authors=[
+    {name = "Jessyca Machado", email = "jessycamachado0@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "scikit-learn>=1.4,<2.0",
+    "mlflow>=2.8",
+    "fastapi>=0.111",
+    "uvicorn>=0.23",
+    "pandas>=2.2",
+    "numpy>=1.26,>2.0",
+    "ipykernel>=7.2.0",
+    "plotly>=6.6.0",
+    # Security patches (Dependabot alerts)
+    "azure-core>=1.38.0",
+    "urllib3>=2.6.3",
+    "pillow>=12.1.1",
+    "protobuf>=6.33.5",
+    "cryptography>=46.0.5",
+    "aiohttp>=3.13.3",
+    "pyasn1>=0.6.2",
+    "sqlparse>=0.5.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipykernel>=6.29",
+    "ruff>=0.12.10",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
