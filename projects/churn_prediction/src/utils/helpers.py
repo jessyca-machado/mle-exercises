@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 
 
-def get_null_columns(df: pd.DataFrame) -> tuple[list, list, list]:
-    """Retorna listas de colunas com valores nulos, separadas por tipo.
+def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]:
+    """Retorna listas de colunas com valores nulos, vazios ou em branco, separadas por tipo.
 
     Args:
         df: Dataframe a ser transformado.
@@ -11,16 +11,27 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list, list, list]:
     Returns:
         Tupla(cat_cols_null, num_cols_null, bool_cols_null)
     """
+    cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
 
-    cat_cols = df.select_dtypes(include='object').columns
-    num_cols = df.select_dtypes(include=[np.number]).columns
-    bool_cols = df.select_dtypes(include='bool').columns
+    cat_cols_null = [
+        col for col in cat_cols
+        if (df[col].isnull() | df[col].astype("string").str.strip().eq("")).any()
+    ]
 
-    cat_cols_null = [col for col in cat_cols if df[col].isnull().sum() > 0]
-    num_cols_null = [col for col in num_cols if df[col].isnull().sum() > 0]
-    bool_cols_null = [col for col in bool_cols if df[col].isnull().sum() > 0]
+    num_cols_null = [
+        col for col in num_cols
+        if df[col].isnull().any()
+    ]
+
+    bool_cols_null = [
+        col for col in bool_cols
+        if df[col].isnull().any()
+    ]
 
     return cat_cols_null, num_cols_null, bool_cols_null
+
 
 def impute_missing(
         df: pd.DataFrame,
