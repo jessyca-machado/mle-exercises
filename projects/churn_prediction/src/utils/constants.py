@@ -1,9 +1,11 @@
-URL = (
+URL: str  = (
         "https://raw.githubusercontent.com/"
         "IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
     )
 
-FEATURES_COLS = [
+RANDOM_STATE: int = 42
+
+FEATURES_COLS: list[str] = [
         "SeniorCitizen",
         "gender",
         "Partner",
@@ -25,7 +27,7 @@ FEATURES_COLS = [
         "TotalCharges",
     ]
 
-YES_NO_COLS = [
+YES_NO_COLS: list[str] = [
         "Partner",
         "Dependents",
         "PhoneService",
