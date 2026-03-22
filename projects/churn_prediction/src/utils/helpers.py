@@ -15,6 +15,38 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
     num_cols = df.select_dtypes(include=["number"]).columns.tolist()
     bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
 
+    cat_cols_null = []
+    for col in cat_cols:
+        s = df[col]
+
+        null_mask = s.isna().to_numpy()
+
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
+
+        if np.any(null_mask | blank_mask):
+            cat_cols_null.append(col)
+
+    num_cols_null = [col for col in num_cols if np.isnan(df[col].to_numpy(dtype="float64")).any()]
+
+    bool_cols_null = [col for col in bool_cols if df[col].isna().to_numpy().any()]
+
+    return cat_cols_null, num_cols_null, bool_cols_null
+
+
+def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]:
+    """Retorna listas de colunas com valores nulos, vazios ou em branco, separadas por tipo.
+
+    Args:
+        df: Dataframe a ser transformado.
+
+    Returns:
+        Tupla(cat_cols_null, num_cols_null, bool_cols_null)
+    """
+    cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
+
     cat_cols_null = [
         col for col in cat_cols
         if (df[col].isnull() | df[col].astype("string").str.strip().eq("")).any()
