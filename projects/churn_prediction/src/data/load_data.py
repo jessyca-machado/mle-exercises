@@ -3,27 +3,28 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.utils.constants import URL
+from src.utils.constants import URL, RANDOM_STATE
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-RANDOM_STATE=42
 
-
-def load_data_churn(url: str) -> pd.DataFrame:
+def load_data_churn() -> pd.DataFrame:
     """Carrega e pré-processa o dataset Telco Customer Churn da IBM.
 
     Returns:
         DataFrame com os dados do dataset
     """
 
+    url = URL
+    random_state = RANDOM_STATE
+
     try:
         df = pd.read_csv(url)
         logger.info("Dataset carregado: %d linhas", len(df))
     except Exception:
         logger.warning("Falha ao baixar dados. Usando dados sintéticos.")
-        rng = np.random.default_rng(RANDOM_STATE)
+        rng = np.random.default_rng(random_state)
         df = pd.DataFrame({
             "customerID": [f"CUST-{i:05d}" for i in range(1, 201)],
             "SeniorCitizen": rng.integers(0, 2, 200),
@@ -51,4 +52,4 @@ def load_data_churn(url: str) -> pd.DataFrame:
     return df
 
 if __name__ == "__main__":
-    load_data_churn(url=URL)
+    load_data_churn()
