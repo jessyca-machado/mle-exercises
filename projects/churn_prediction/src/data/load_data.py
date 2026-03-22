@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from utils.constants import URL
+from src.utils.constants import URL
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,3 +49,6 @@ def load_data_churn(url: str) -> pd.DataFrame:
         })
 
     return df
+
+if __name__ == "__main__":
+    load_data_churn(url=URL)
