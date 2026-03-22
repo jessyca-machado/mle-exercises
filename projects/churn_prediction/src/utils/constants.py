@@ -5,6 +5,8 @@ URL: str  = (
 
 RANDOM_STATE: int = 42
 
+TEST_SIZE: int = 0.2
+
 FEATURES_COLS: list[str] = [
         "SeniorCitizen",
         "gender",
