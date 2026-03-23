@@ -20,25 +20,26 @@
         ├── notebooks
         │   └── eda.ipynb
         ├── pyproject.toml
-        └── src
-            ├── __init__.py
-            ├── data
-            │   ├── __init__.py
-            │   ├── clean_data.py
-            │   └── load_data.py
-            ├── data_io.py
-            ├── models
-            │   ├── __init__.py
-            │   └── baseline_model.py
-            ├── predict.py
-            ├── principal.py
-            ├── tests.py
-            ├── train.py
-            └── utils
-                ├── __init__.py
-                ├── constants.py
-                └── helpers.py
+        ├── src
+        │   ├── __init__.py
+        │   ├── data
+        │   │   ├── __init__.py
+        │   │   ├── clean_data.py
+        │   │   └── load_data.py
+        │   ├── data_io.py
+        │   ├── models
+        │   │   ├── __init__.py
+        │   │   └── baseline_model.py
+        │   ├── predict.py
+        │   ├── principal.py
+        │   ├── tests.py
+        │   ├── train.py
+        │   └── utils
+        │       ├── __init__.py
+        │       ├── constants.py
+        │       └── helpers.py
+        └── uv.lock
 
-11 directories, 23 files
+11 directories, 24 files
 ```
 <!-- TREE:END -->
