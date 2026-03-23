@@ -15,7 +15,6 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
     num_cols = df.select_dtypes(include=["number"]).columns.tolist()
     bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
 
-<<<<<<< HEAD
     cat_cols_null = []
     for col in cat_cols:
         s = df[col]
@@ -48,22 +47,6 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
 
         if np.any(null_mask | blank_mask):
             bool_cols_null.append(col)
-=======
-    cat_cols_null = [
-        col for col in cat_cols
-        if (df[col].isnull() | df[col].astype("string").str.strip().eq("")).any()
-    ]
-
-    num_cols_null = [
-        col for col in num_cols
-        if df[col].isnull().any()
-    ]
-
-    bool_cols_null = [
-        col for col in bool_cols
-        if df[col].isnull().any()
-    ]
->>>>>>> c1748b0 (Revert "feat: modify get_null_columns to detect NumPy-based missing values")
 
     return cat_cols_null, num_cols_null, bool_cols_null
 
