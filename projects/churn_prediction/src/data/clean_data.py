@@ -30,6 +30,8 @@ def clean_data(
     """
     df_clean = df.copy()
 
+    df_clean['TotalCharges'] = pd.to_numeric(df_clean['TotalCharges'], errors='coerce')
+
     df_clean = df_clean.dropna(subset=["customerID"])
 
     for col in yes_no_cols:
