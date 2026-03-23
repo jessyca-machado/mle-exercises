@@ -20,15 +20,39 @@ irm https://astral.sh/uv/install.ps1 | iex
 uv --version
 ```
 
-## 🔧 Configuração
-1. **Crie o ambiente virtual e instale as dependências:**
+## 📦 **Sobre dependências e lockfile**
+- As dependências do projeto estão em `pyproject.toml`.
+- O arquivo `uv.lock` registra versões exatas para reproduzir o ambiente.
+- **Observação**: para trabalhar com notebooks, o projeto usa `ipykernel` como dependência de desenvolvimento (extra dev).
+
+## 🔧 Configuração do ambiente
+1. **Entrar na pasta do projeto:**
 ```bash
 cd projects/churn_prediction
-uv venv .venv
-uv pip install -e .
 ```
 
-2. **Ative o ambiente virtual:**
+2. **Criar a venv:**
+```bash
+uv venv .venv
+```
+
+3. **Instalar as dependências (incluindo as de desenvolvimento):**
+Instale as dependências conforme o `uv.lock` (ou gere/atualize o lock quando necessário):
+```bash
+uv sync --extra dev
+```
+
+## 🧠 **Jupyter / Notebooks no VS Code**
+4. **Selecionar o interpretador Python do projeto:**
+No VS Code:
+`Ctrl+Shift+P` → Python: Select Interpreter
+Selecione: `./.venv/bin/python` (ou o equivalente no Windows)
+
+5. **Abrir o notebbok e recarregar a janela:**
+No VS Code:
+`Ctrl+Shift+P` → Developer: Reload Window
+
+6. **Ative o ambiente virtual:**
 ### Linux/macOS
 ```bash
 source .venv/bin/activate
@@ -39,22 +63,17 @@ source .venv/bin/activate
 .\.venv\Scripts\Activate.ps1
 ```
 
-3. **Instale/garanta suporte ao Jupyter no ambiente (com o .venv ativado):**
+7. **Executar a suíte de testes unitários**
 ```bash
-uv pip install -U ipykernel jupyter
+PYTHONPATH=. uv run pytest -v tests/
 ```
 
-4. **Registre o kernel do notebook apontando para o .venv (com o .venv ativado):**
+8. **Checagem de qualidade de código (Lint e Formatação)**
 ```bash
-python -m ipykernel install --user --name churn_prediction --display-name "Python (.venv churn_prediction)"
-```
+uv run ruff check src/ tests/
+uv run ruff format src/ tests/
+ ```
 
-5. **Verifique se o kernel foi registrado:**
 ```bash
-jupyter kernelspec list
+mlflow ui --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlartifacts
 ```
-
-## Rodar notebook
-1. Abra o arquivo `notebooks/eda.ipynb`.
-1. Com o notebook aberto, use `Ctrl+Shift+P` → **Jupyter: Select Notebook Kernel**.
-2. selecione **Python (.venv churn_prediction)**.
