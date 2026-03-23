@@ -18,7 +18,6 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
     cat_cols_null = []
     for col in cat_cols:
         s = df[col]
-
         null_mask = s.isna().to_numpy()
 
         arr = s.astype("string").to_numpy(dtype="U")
@@ -27,40 +26,27 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
         if np.any(null_mask | blank_mask):
             cat_cols_null.append(col)
 
-    num_cols_null = [col for col in num_cols if np.isnan(df[col].to_numpy(dtype="float64")).any()]
+    num_cols_null = []
+    for col in num_cols:
+        s = df[col]
+        null_mask = s.isna().to_numpy()
 
-    bool_cols_null = [col for col in bool_cols if df[col].isna().to_numpy().any()]
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
 
-    return cat_cols_null, num_cols_null, bool_cols_null
+        if np.any(null_mask | blank_mask):
+            num_cols_null.append(col)
 
+    bool_cols_null = []
+    for col in bool_cols:
+        s = df[col]
+        null_mask = s.isna().to_numpy()
 
-def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]:
-    """Retorna listas de colunas com valores nulos, vazios ou em branco, separadas por tipo.
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
 
-    Args:
-        df: Dataframe a ser transformado.
-
-    Returns:
-        Tupla(cat_cols_null, num_cols_null, bool_cols_null)
-    """
-    cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
-    num_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
-
-    cat_cols_null = [
-        col for col in cat_cols
-        if (df[col].isnull() | df[col].astype("string").str.strip().eq("")).any()
-    ]
-
-    num_cols_null = [
-        col for col in num_cols
-        if df[col].isnull().any()
-    ]
-
-    bool_cols_null = [
-        col for col in bool_cols
-        if df[col].isnull().any()
-    ]
+        if np.any(null_mask | blank_mask):
+            bool_cols_null.append(col)
 
     return cat_cols_null, num_cols_null, bool_cols_null
 
