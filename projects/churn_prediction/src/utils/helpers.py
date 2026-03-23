@@ -15,20 +15,38 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
     num_cols = df.select_dtypes(include=["number"]).columns.tolist()
     bool_cols = df.select_dtypes(include=["bool"]).columns.tolist()
 
-    cat_cols_null = [
-        col for col in cat_cols
-        if (df[col].isnull() | df[col].astype("string").str.strip().eq("")).any()
-    ]
+    cat_cols_null = []
+    for col in cat_cols:
+        s = df[col]
+        null_mask = s.isna().to_numpy()
 
-    num_cols_null = [
-        col for col in num_cols
-        if df[col].isnull().any()
-    ]
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
 
-    bool_cols_null = [
-        col for col in bool_cols
-        if df[col].isnull().any()
-    ]
+        if np.any(null_mask | blank_mask):
+            cat_cols_null.append(col)
+
+    num_cols_null = []
+    for col in num_cols:
+        s = df[col]
+        null_mask = s.isna().to_numpy()
+
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
+
+        if np.any(null_mask | blank_mask):
+            num_cols_null.append(col)
+
+    bool_cols_null = []
+    for col in bool_cols:
+        s = df[col]
+        null_mask = s.isna().to_numpy()
+
+        arr = s.astype("string").to_numpy(dtype="U")
+        blank_mask = np.char.str_len(np.char.strip(arr)) == 0
+
+        if np.any(null_mask | blank_mask):
+            bool_cols_null.append(col)
 
     return cat_cols_null, num_cols_null, bool_cols_null
 
