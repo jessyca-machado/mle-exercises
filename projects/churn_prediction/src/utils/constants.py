@@ -43,3 +43,9 @@ YES_NO_COLS: list[str] = [
         "PaperlessBilling",
         "Churn",
     ]
+
+MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"
+
+MLFLOW_EXPERIMENT_NAME: str = "churn_baselines"
+
+MLFLOW_ARTIFACT_ROOT: str = "./mlartifacts"

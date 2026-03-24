@@ -120,7 +120,7 @@ def one_hot_encode_categoricals(
 def log_class_distribution(
         y: pd.Series,
         name: str
-) -> Tuple[str, pd.Series, pd.Series]:
+) -> tuple[str, pd.Series, pd.Series]:
     """
     Calcula a distribuição de classes de uma série (target), retornando contagens
     absolutas e proporções (frequências relativas).
