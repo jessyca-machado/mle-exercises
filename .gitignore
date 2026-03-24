@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+mlruns/
+mlartifacts/
+mlflow.db
+mlflow.db-journal
+*.db-journal
+
+*.db
+artifacts/
