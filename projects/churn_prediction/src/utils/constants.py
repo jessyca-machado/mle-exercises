@@ -29,6 +29,30 @@ FEATURES_COLS: list[str] = [
         "TotalCharges",
     ]
 
+FEATURES_COLS_ENG: list[str] = [
+        "SeniorCitizen",
+        "gender",
+        "Partner",
+        "Dependents",
+        "tenure",
+        "PhoneService",
+        "MultipleLines",
+        "InternetService",
+        "OnlineSecurity",
+        "OnlineBackup",
+        "DeviceProtection",
+        "TechSupport",
+        "StreamingTV",
+        "StreamingMovies",
+        "Contract",
+        "PaperlessBilling",
+        "PaymentMethod",
+        "MonthlyCharges",
+        "TotalCharges",
+        "TotalChargesPerMonth",
+        "ltv",
+    ]
+
 YES_NO_COLS: list[str] = [
         "Partner",
         "Dependents",

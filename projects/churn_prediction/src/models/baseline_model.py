@@ -2,7 +2,6 @@
 
 - Demonstra como estabelecer baselines sólidas antes de modelos complexos.
 - Inclui logging de hiperparâmetros e métricas para comparação.
-- Corrige unpack do clean_data (retorna df_clean, X, y).
 - Loga distribuição de classes (para evidenciar desbalanceamento).
 - Usa dois baselines:
     1) most_frequent (baseline "ingênuo" que pode prever só a classe 0)
@@ -21,12 +20,9 @@ Para visualizar:
     mlflow ui # Inicia UI em http://localhost:5000
 """
 import logging
-import os
-from typing import Any
 
 import numpy as np
 import pandas as pd
-
 import mlflow
 
 from sklearn.dummy import DummyClassifier
@@ -40,19 +36,15 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-
-from src.data.load_data import load_data_churn
-from src.data.clean_data import clean_data
+from src.data.pipelines import prepare_train_test
 from src.utils.helpers import log_class_distribution
 from src.utils.constants import (
     RANDOM_STATE,
     TEST_SIZE,
     FEATURES_COLS,
-    YES_NO_COLS,
     MLFLOW_TRACKING_URI,
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_ARTIFACT_ROOT,
@@ -81,7 +73,7 @@ def train_and_evaluate(
         model_name: Nome do modelo para logging.
 
     Returns:
-        Dicionário com métricas: accuracy, auc_roc.
+        Dicionário com métricas: accuracy, f1_score, auc_roc, pr_auc.
     """
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
@@ -90,18 +82,16 @@ def train_and_evaluate(
     logger.info(classification_report(y_test, y_pred))
 
     metrics: dict[str, float] = {}
-    metrics["accuracy"] = float((y_pred == y_test).mean())
+    metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
     metrics["f1"] = float(f1_score(y_test, y_pred, pos_label=1))
     logger.info("F1 (classe 1): %.4f", metrics["f1"])
 
     if hasattr(model, "predict_proba"):
         y_proba = model.predict_proba(X_test)[:, 1]
         metrics["auc_roc"] = float(roc_auc_score(y_test, y_proba))
-        logger.info("AUC-ROC: %.4f", metrics["auc_roc"])
-
         metrics["pr_auc"] = float(average_precision_score(y_test, y_proba))
+        logger.info("AUC-ROC: %.4f", metrics["auc_roc"])
         logger.info("PR-AUC (Average Precision): %.4f", metrics["pr_auc"])
-
     else:
         metrics["auc_roc"] = float("nan")
         metrics["pr_auc"] = float("nan")
@@ -113,41 +103,29 @@ def train_and_evaluate(
     return metrics
 
 
-def _log_common_params() -> None:
-    """Loga parâmetros comuns a todos os runs no MLflow."""
-    mlflow.log_param("test_size", TEST_SIZE)
-    mlflow.log_param("random_state", RANDOM_STATE)
-
-
 def _setup_mlflow() -> None:
-    """Configura MLflow para usar DB backend (SQLite) + experiment."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
-
     mlflow.set_tag("artifact_root_hint", MLFLOW_ARTIFACT_ROOT)
     mlflow.set_tag("mlflow_backend_store", MLFLOW_TRACKING_URI)
 
 
 def main() -> None:
-    """Executa comparação entre baselines e regressão logística."""
     _setup_mlflow()
-
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    df = load_data_churn()
-
-    df_clean, X, y = clean_data(df, FEATURES_COLS, YES_NO_COLS, "Cleaned dataset and features")
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
+    X_train, X_test, y_train, y_test, encoder = prepare_train_test(
+        features=FEATURES_COLS,
+        target="Churn",
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
-        stratify=y,
+        drop_first=True,
+        use_feature_engineering=False,
     )
 
     logger.info("Treino: %d | Teste: %d", len(X_train), len(X_test))
+
     name, counts, ratios = log_class_distribution(y_train, "y_train")
     logger.info("%s | contagens:\n%s", name, counts.to_string())
     logger.info("%s | proporções:\n%s", name, ratios.to_string())
@@ -157,33 +135,17 @@ def main() -> None:
     logger.info("%s | proporções:\n%s", name, ratios.to_string())
 
     dummy_mf_pipeline = Pipeline(
-        [
-            ("clf", DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE)),
-        ]
+        [("clf", DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE))]
     )
-
     dummy_mf_metrics = train_and_evaluate(
-        dummy_mf_pipeline,
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        "DummyClassifier (most_frequent)",
+        dummy_mf_pipeline, X_train, X_test, y_train, y_test, "DummyClassifier (most_frequent)"
     )
 
     dummy_strat_pipeline = Pipeline(
-        [
-            ("clf", DummyClassifier(strategy="stratified", random_state=RANDOM_STATE)),
-        ]
+        [("clf", DummyClassifier(strategy="stratified", random_state=RANDOM_STATE))]
     )
-
     dummy_strat_metrics = train_and_evaluate(
-        dummy_strat_pipeline,
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        "DummyClassifier (stratified)",
+        dummy_strat_pipeline, X_train, X_test, y_train, y_test, "DummyClassifier (stratified)"
     )
 
     lr_pipeline = Pipeline(
@@ -193,55 +155,55 @@ def main() -> None:
         ]
     )
 
-    mlflow.set_experiment("churn_prediction")
-
     with mlflow.start_run(run_name="logistic_regression_baseline"):
+        mlflow.log_param("test_size", TEST_SIZE)
+        mlflow.log_param("random_state", RANDOM_STATE)
+        mlflow.log_param("drop_first", True)
+        mlflow.log_param("n_features_after_encoding", int(X_train.shape[1]))
+        mlflow.log_param("encoder_num_columns", int(len(encoder.columns_)))
+
         lr_metrics = train_and_evaluate(
             lr_pipeline,
             X_train,
             X_test,
             y_train,
             y_test,
-            "LogisticRegression (balanced)",
+            "LogisticRegression",
         )
 
         y_pred_train = lr_pipeline.predict(X_train)
         y_pred_test = lr_pipeline.predict(X_test)
 
-        mlflow.log_text(
-            classification_report(y_test, y_pred_test),
-            "classification_report.txt",
-        )
+        mlflow.log_text(classification_report(y_test, y_pred_test), "classification_report.txt")
 
         train_accuracy = accuracy_score(y_train, y_pred_train)
         test_accuracy = accuracy_score(y_test, y_pred_test)
-        test_f1 = f1_score(y_test, y_pred_test, pos_label=1)
-        test_precision = precision_score(y_test, y_pred_test, pos_label=1)
-        test_recall = recall_score(y_test, y_pred_test, pos_label=1)
 
         mlflow.log_metric("train_accuracy", float(train_accuracy))
         mlflow.log_metric("test_accuracy", float(test_accuracy))
-        mlflow.log_metric("test_f1_score", float(test_f1))
-        mlflow.log_metric("test_precision", float(test_precision))
-        mlflow.log_metric("test_recall", float(test_recall))
+        mlflow.log_metric("test_f1_score", float(f1_score(y_test, y_pred_test, pos_label=1)))
+        mlflow.log_metric("test_precision", float(precision_score(y_test, y_pred_test, pos_label=1)))
+        mlflow.log_metric("test_recall", float(recall_score(y_test, y_pred_test, pos_label=1)))
+        mlflow.log_metric("overfitting_gap", float(train_accuracy - test_accuracy))
 
-        overfitting = float(train_accuracy - test_accuracy)
-        mlflow.log_metric("overfitting_gap", overfitting)
-
+        if "auc_roc" in lr_metrics and not np.isnan(lr_metrics["auc_roc"]):
+            mlflow.log_metric("auc_roc", lr_metrics["auc_roc"])
+        if "pr_auc" in lr_metrics and not np.isnan(lr_metrics["pr_auc"]):
+            mlflow.log_metric("pr_auc", lr_metrics["pr_auc"])
 
     logger.info("\n=== Comparação (Accuracy) ===")
-    logger.info("F1 DummyClassifier(most_frequent): %.4f", dummy_mf_metrics["accuracy"])
-    logger.info("F1 DummyClassifier(stratified):   %.4f", dummy_strat_metrics["accuracy"])
-    logger.info("F1 LogisticRegression:  %.4f", lr_metrics["accuracy"])
+    logger.info("Acc Dummy(most_frequent): %.4f", dummy_mf_metrics["accuracy"])
+    logger.info("Acc Dummy(stratified):    %.4f", dummy_strat_metrics["accuracy"])
+    logger.info("Acc LogisticRegression:   %.4f", lr_metrics["accuracy"])
 
     logger.info("\n=== Comparação (F1 classe 1) ===")
-    logger.info("F1 DummyClassifier(most_frequent): %.4f", dummy_mf_metrics["f1"])
-    logger.info("F1 DummyClassifier(stratified):   %.4f", dummy_strat_metrics["f1"])
-    logger.info("F1 LogisticRegression:  %.4f", lr_metrics["f1"])
+    logger.info("F1 Dummy(most_frequent): %.4f", dummy_mf_metrics["f1"])
+    logger.info("F1 Dummy(stratified):    %.4f", dummy_strat_metrics["f1"])
+    logger.info("F1 LogisticRegression:   %.4f", lr_metrics["f1"])
 
     logger.info("\n=== Comparação (PR-AUC) ===")
-    logger.info("PR-AUC DummyClassifier(most_frequent): %.4f", dummy_mf_metrics["pr_auc"])
-    logger.info("PR-AUC DummyClassifier(stratified):    %.4f", dummy_strat_metrics["pr_auc"])
+    logger.info("PR-AUC Dummy(most_frequent): %.4f", dummy_mf_metrics["pr_auc"])
+    logger.info("PR-AUC Dummy(stratified):    %.4f", dummy_strat_metrics["pr_auc"])
     logger.info("PR-AUC LogisticRegression:   %.4f", lr_metrics["pr_auc"])
 
     logger.info("\n=== Comparação geral (LogisticRegression vs. DummyClassifier(most_frequent)) ===")
