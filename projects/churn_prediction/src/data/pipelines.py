@@ -1,4 +1,4 @@
-""" Pipelines - Preparação do dataset para churn (treino/teste) com:
+"""Pipelines - Preparação do dataset para churn (treino/teste) com:
 
 - load -> preprocess -> feature engineering -> split -> one-hot (fit no treino, transform no teste)
 
@@ -31,6 +31,19 @@ def prepare_train_test(
     drop_first: bool = True,
     use_feature_engineering: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, DummiesEncoder]:
+    """Pipeline completa de preparação do dataset para churn prediction:
+
+    Args:
+        features: lista de colunas a serem usadas como features.
+        target: nome da coluna target.
+        test_size: proporção do dataset a ser usado como teste.
+        random_state: semente para reprodutibilidade do split.
+        drop_first: se True, remove a primeira categoria no one-hot (evita multicolinearidade).
+        use_feature_engineering: se True, aplica a etapa de feature engineering.
+
+    Returns:
+        Dataframe com as novas features criadas.
+    """
     df = load_data_churn()
 
     df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features")
