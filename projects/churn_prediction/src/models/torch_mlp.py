@@ -50,6 +50,7 @@ class TorchMLPClassifier(BaseEstimator, ClassifierMixin):
     Estimador scikit-learn para usar um MLP PyTorch dentro de Pipeline.
     Implementa fit / predict / predict_proba para habilitar AUC e PR-AUC.
     """
+    _estimator_type = "classifier"
 
     def __init__(
         self,
@@ -66,10 +67,16 @@ class TorchMLPClassifier(BaseEstimator, ClassifierMixin):
         self.device: Optional[str] = None
         self.verbose = 0
 
+
+    def __sklearn_is_fitted__(self):
+        return hasattr(self, "model_") and self.model_ is not None and hasattr(self, "classes_")
+
+
     def _get_device(self) -> torch.device:
         if self.device is not None:
             return torch.device(self.device)
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
     def fit(self, X, y):
         X, y = check_X_y(X, y)
@@ -126,6 +133,7 @@ class TorchMLPClassifier(BaseEstimator, ClassifierMixin):
 
         return self
 
+
     @torch.no_grad()
     def predict_proba(self, X):
         check_is_fitted(self, "model_")
@@ -139,7 +147,38 @@ class TorchMLPClassifier(BaseEstimator, ClassifierMixin):
         probs = torch.softmax(logits, dim=1).cpu().numpy()
         return probs
 
+
     def predict(self, X):
         probs = self.predict_proba(X)
         idx = probs.argmax(axis=1)
         return self.classes_[idx]
+
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+
+        if "model_" in state and state["model_"] is not None:
+            buffer = io.BytesIO()
+            torch.save(state["model_"].state_dict(), buffer)
+            state["_model_state_bytes_"] = buffer.getvalue()
+            state["model_"] = None
+        return state
+
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+        if state.get("_model_state_bytes_") is not None:
+            device = self._get_device()
+
+            output_dim = len(self.classes_)
+            self.model_ = TorchMLP(
+                input_dim=int(self.n_features_in_),
+                output_dim=int(output_dim),
+                hidden_dims=self.hidden_dims,
+                dropout=self.dropout,
+            ).to(device)
+            buffer = io.BytesIO(state["_model_state_bytes_"])
+            sd = torch.load(buffer, map_location=device)
+            self.model_.load_state_dict(sd)
+            self.model_.eval()

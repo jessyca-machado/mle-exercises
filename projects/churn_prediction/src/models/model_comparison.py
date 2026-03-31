@@ -44,9 +44,11 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     average_precision_score,
+    make_scorer,
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold, cross_validate
 
 import mlflow
 
@@ -82,7 +84,8 @@ class ModelResult:
         metrics: Dicionário com métricas calculadas (accuracy, f1, auc_roc, pr_auc).
     """
     name: str
-    metrics: Dict[str, float]
+    cv_metrics: Dict[str, float]
+    holdout_metrics: Dict[str, float]
 
 
 def _setup_mlflow() -> None:
@@ -90,6 +93,55 @@ def _setup_mlflow() -> None:
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
     mlflow.set_tag("artifact_root_hint", MLFLOW_ARTIFACT_ROOT)
     mlflow.set_tag("mlflow_backend_store", MLFLOW_TRACKING_URI)
+
+
+def roc_auc_scorer(estimator, X, y_true):
+    y_proba = estimator.predict_proba(X)[:, 1]
+    return roc_auc_score(y_true, y_proba)
+
+
+def pr_auc_scorer(estimator, X, y_true):
+    y_proba = estimator.predict_proba(X)[:, 1]
+    return average_precision_score(y_true, y_proba)
+
+
+def cross_validate_model(
+    model: Pipeline,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    cv_splits: int = 5,
+    n_jobs: int = -1,
+) -> Dict[str, float]:
+    cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_STATE)
+
+    scoring = {
+        "acc": "accuracy",
+        "f1": "f1",
+        "roc_auc": roc_auc_scorer,
+        "pr_auc": pr_auc_scorer,
+    }
+
+    out = cross_validate(
+        model,
+        X_train,
+        y_train,
+        cv=cv,
+        scoring=scoring,
+        n_jobs=n_jobs,
+        return_train_score=False,
+        error_score="raise",
+    )
+
+    return {
+        "cv_acc_mean": float(out["test_acc"].mean()),
+        "cv_acc_std": float(out["test_acc"].std()),
+        "cv_f1_mean": float(out["test_f1"].mean()),
+        "cv_f1_std": float(out["test_f1"].std()),
+        "cv_auc_mean": float(out["test_roc_auc"].mean()),
+        "cv_auc_std": float(out["test_roc_auc"].std()),
+        "cv_pr_auc_mean": float(out["test_pr_auc"].mean()),
+        "cv_pr_auc_std": float(out["test_pr_auc"].std()),
+    }
 
 
 def train_and_evaluate(
@@ -163,14 +215,13 @@ def main(
     feature_selection: str = "feature_importance",
     top_k: int = 10,
     log_models: bool = False,
-    parent_run_name: Optional[str] = "model_comparison",
+    parent_run_name: Optional[str] = "model_comparison",  # mantido na assinatura, mas não usado
+    cv_splits: int = 5,
 ) -> None:
     """
     Executa comparação entre DecisionTree, RandomForest e SVC, com seleção de features opcional.
-
     Preparar os dados via pipeline do projeto, opcionalmente reduzir a dimensionalidade
     por importâncias e comparar os modelos com as mesmas features finais.
-
     Args:
         use_feature_engineering:
             Se True, aplica feature_engineering dentro do pipeline de dados.
@@ -178,7 +229,6 @@ def main(
         use_feature_selection:
             Se True, aplica seleção de features Top-K usando importâncias de RandomForest.
         top_k: Quantidade de features a manter quando use_feature_selection=True.
-
     Returns:
         None: Função de execução (efeitos colaterais: logs e impressão de summary).
     """
@@ -187,199 +237,188 @@ def main(
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    parent_ctx = (
-        mlflow.start_run(run_name=parent_run_name)
-        if parent_run_name is not None
-        else None
+    X_train, X_test, y_train, y_test, encoder = prepare_train_test(
+        features=FEATURES_COLS,
+        target="Churn",
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        drop_first=True,
+        use_feature_engineering=use_feature_engineering,
     )
 
-    try:
-        X_train, X_test, y_train, y_test, encoder = prepare_train_test(
-            features=FEATURES_COLS,
-            target="Churn",
-            test_size=TEST_SIZE,
+    n_features_before = int(X_train.shape[1])
+    logger.info("Antes da seleção: %d features", n_features_before)
+
+    selector = None
+    if use_feature_selection:
+        selector = fit_feature_selector(
+            X_train,
+            y_train,
+            top_k=top_k,
             random_state=RANDOM_STATE,
-            drop_first=True,
-            use_feature_engineering=use_feature_engineering,
+            feature_selection=feature_selection,
         )
+        X_train = apply_selector(X_train, selector)
+        X_test = apply_selector(X_test, selector)
 
-        logger.info("Antes da seleção: %d features", X_train.shape[1])
+    n_features_after = int(X_train.shape[1])
+    logger.info("Depois da seleção: %d features", n_features_after)
 
-        n_features_before = int(X_train.shape[1])
-        logger.info("Antes da seleção: %d features", n_features_before)
-
-        selector = None
-
-        if use_feature_selection:
-            selector = fit_feature_selector(
-                X_train,
-                y_train,
-                top_k=top_k,
-                random_state=RANDOM_STATE,
-                feature_selection=feature_selection,
-            )
-
-            X_train = apply_selector(X_train, selector)
-            X_test = apply_selector(X_test, selector)
-
-        n_features_after = int(X_train.shape[1])
-        logger.info("Depois da seleção: %d features", n_features_after)
-
-        models: List[Tuple[str, Pipeline]] = [
-            (
-                "DecisionTree",
-                Pipeline([("clf", DecisionTreeClassifier(random_state=RANDOM_STATE))]),
-            ),
-            (
-                "RandomForest",
-                Pipeline([("clf", RandomForestClassifier(random_state=RANDOM_STATE))]),
-            ),
-            (
-                "SVC_rbf",
-                Pipeline(
-                    [
-                        ("scaler", StandardScaler()),
-                        ("clf", SVC(
+    models: List[Tuple[str, Pipeline]] = [
+        (
+            "DecisionTree",
+            Pipeline([("clf", DecisionTreeClassifier(random_state=RANDOM_STATE))]),
+        ),
+        (
+            "RandomForest",
+            Pipeline([("clf", RandomForestClassifier(random_state=RANDOM_STATE))]),
+        ),
+        (
+            "SVC_rbf",
+            Pipeline(
+                [
+                    ("scaler", StandardScaler()),
+                    (
+                        "clf",
+                        SVC(
                             kernel="rbf",
                             probability=True,
                             random_state=RANDOM_STATE,
-                        )),
-                    ]
-                ),
-            ),
-            (
-                "MLP_torch",
-                Pipeline(
-                    [
-                        ("scaler", StandardScaler()),
-                        ("clf", TorchMLPClassifier(random_state=RANDOM_STATE)),
-                    ]
-                ),
-            ),
-            
-        ]
-
-        results: List[ModelResult] = []
-
-        for name, model in models:
-            with mlflow.start_run(run_name=name, nested=(parent_ctx is not None)):
-
-                mlflow.log_param("model_name", name)
-                mlflow.log_param("test_size", TEST_SIZE)
-                mlflow.log_param("random_state", RANDOM_STATE)
-                mlflow.log_param("drop_first", True)
-                mlflow.log_param("use_feature_engineering", bool(use_feature_engineering))
-
-                mlflow.log_param("use_feature_selection", bool(use_feature_selection))
-                mlflow.log_param("feature_selection", feature_selection if use_feature_selection else "none")
-                mlflow.log_param("top_k", int(top_k) if use_feature_selection else 0)
-
-                mlflow.log_param("n_features_before_selection", n_features_before)
-                mlflow.log_param("n_features_after_selection", n_features_after)
-
-                if name == "MLP_torch":
-                    clf = model.named_steps["clf"]
-                    mlflow.log_param("mlp_hidden_dims", str(clf.hidden_dims))
-                    mlflow.log_param("mlp_dropout", float(clf.dropout))
-                    mlflow.log_param("mlp_lr", float(clf.lr))
-                    mlflow.log_param("mlp_batch_size", int(clf.batch_size))
-                    mlflow.log_param("mlp_epochs", int(clf.epochs))
-                    mlflow.log_param("mlp_weight_decay", float(clf.weight_decay))
-                    mlflow.log_param("mlp_device", str(clf.device))
-
-                try:
-                    mlflow.log_param("encoder_num_columns", int(len(encoder.columns_)))
-                except Exception:
-                    pass
-
-                if use_feature_selection and selector is not None:
-                    mlflow.log_text("\n".join(selector.selected_features_), "selected_features.txt")
-
-                    if isinstance(selector, ImportanceSelector):
-                        mlflow.log_text(
-                            selector.importances_.to_string(),
-                            "feature_importances_full.txt",
-                        )
-                        mlflow.log_text(
-                            selector.importances_.head(50).to_string(),
-                            "feature_importances_top50.txt",
-                        )
-                    elif isinstance(selector, AnovaSelector):
-                        mlflow.log_text(selector.scores_.to_string(), "anova_scores_full.txt")
-                        mlflow.log_text(selector.pvalues_.to_string(), "anova_pvalues_full.txt")
-                        mlflow.log_text(selector.scores_.head(50).to_string(), "anova_scores_top50.txt")
-
-                metrics, report = train_and_evaluate(
-                    model=model,
-                    X_train=X_train,
-                    X_test=X_test,
-                    y_train=y_train,
-                    y_test=y_test,
-                    model_name=name,
-                )
-
-                mlflow.log_metric("train_accuracy", metrics["train_accuracy"])
-                mlflow.log_metric("test_accuracy", metrics["test_accuracy"])
-                mlflow.log_metric("test_f1", metrics["test_f1"])
-                mlflow.log_metric("overfitting_gap", metrics["overfitting_gap"])
-
-                if not np.isnan(metrics["auc_roc"]):
-                    mlflow.log_metric("auc_roc", metrics["auc_roc"])
-                if not np.isnan(metrics["pr_auc"]):
-                    mlflow.log_metric("pr_auc", metrics["pr_auc"])
-
-                mlflow.log_text(report, "classification_report.txt")
-
-                if log_models:
-                    mlflow.sklearn.log_model(model, artifact_path="model")
-
-                results.append(ModelResult(name=name, metrics=metrics))
-
-        summary = (
-            pd.DataFrame(
-                [
-                    {
-                        "model": r.name,
-                        "train_accuracy": r.metrics["train_accuracy"],
-                        "test_accuracy": r.metrics["test_accuracy"],
-                        "test_f1": r.metrics["test_f1"],
-                        "auc_roc": r.metrics["auc_roc"],
-                        "pr_auc": r.metrics["pr_auc"],
-                        "overfitting_gap": r.metrics["overfitting_gap"],
-                    }
-                    for r in results
+                        ),
+                    ),
                 ]
+            ),
+        ),
+        (
+            "MLP_torch",
+            Pipeline(
+                [
+                    ("scaler", StandardScaler()),
+                    ("clf", TorchMLPClassifier(random_state=RANDOM_STATE)),
+                ]
+            ),
+        ),
+    ]
+
+    results: List[ModelResult] = []
+
+    for name, model in models:
+        with mlflow.start_run(run_name=name):
+            mlflow.log_param("model_name", name)
+            mlflow.log_param("test_size", TEST_SIZE)
+            mlflow.log_param("random_state", RANDOM_STATE)
+            mlflow.log_param("drop_first", True)
+            mlflow.log_param("use_feature_engineering", bool(use_feature_engineering))
+            mlflow.log_param("use_feature_selection", bool(use_feature_selection))
+            mlflow.log_param("feature_selection", feature_selection if use_feature_selection else "none")
+            mlflow.log_param("top_k", int(top_k) if use_feature_selection else 0)
+            mlflow.log_param("n_features_before_selection", n_features_before)
+            mlflow.log_param("n_features_after_selection", n_features_after)
+            mlflow.log_param("cv_splits", int(cv_splits))
+
+            try:
+                mlflow.log_param("encoder_num_columns", int(len(encoder.columns_)))
+            except Exception:
+                pass
+
+            if use_feature_selection and selector is not None:
+                mlflow.log_text("\n".join(selector.selected_features_), "selected_features.txt")
+                if isinstance(selector, ImportanceSelector):
+                    mlflow.log_text(selector.importances_.to_string(), "feature_importances_full.txt")
+                    mlflow.log_text(selector.importances_.head(50).to_string(), "feature_importances_top50.txt")
+                elif isinstance(selector, AnovaSelector):
+                    mlflow.log_text(selector.scores_.to_string(), "anova_scores_full.txt")
+                    mlflow.log_text(selector.pvalues_.to_string(), "anova_pvalues_full.txt")
+                    mlflow.log_text(selector.scores_.head(50).to_string(), "anova_scores_top50.txt")
+
+            if name == "MLP_torch":
+                clf = model.named_steps["clf"]
+                for attr in ["hidden_dims", "dropout", "lr", "batch_size", "epochs", "weight_decay", "device"]:
+                    if hasattr(clf, attr):
+                        mlflow.log_param(f"mlp_{attr}", str(getattr(clf, attr)))
+
+            n_jobs_cv = 1 if name == "MLP_torch" else -1
+            logger.info("Running CV for %s (n_jobs=%s)...", name, n_jobs_cv)
+
+            cv_metrics = cross_validate_model(
+                model=model,
+                X_train=X_train,
+                y_train=y_train,
+                cv_splits=cv_splits,
+                n_jobs=n_jobs_cv,
             )
-            .sort_values(by="pr_auc", ascending=False)
-        )
 
-        logger.info("\n=== Summary (sorted by PR-AUC) ===\n%s", summary.to_string(index=False))
+            for k, v in cv_metrics.items():
+                mlflow.log_metric(k, v)
 
-        if parent_ctx is not None:
-            mlflow.log_text(summary.to_string(index=False), "summary.txt")
-            mlflow.log_dict(
+            holdout_metrics, report = train_and_evaluate(
+                model=model,
+                X_train=X_train,
+                X_test=X_test,
+                y_train=y_train,
+                y_test=y_test,
+                model_name=name,
+            )
+
+            logger.info(
+                "CV (%s) | acc=%.4f±%.4f f1=%.4f±%.4f auc=%.4f±%.4f pr_auc=%.4f±%.4f",
+                name,
+                cv_metrics["cv_acc_mean"], cv_metrics["cv_acc_std"],
+                cv_metrics["cv_f1_mean"], cv_metrics["cv_f1_std"],
+                cv_metrics["cv_auc_mean"], cv_metrics["cv_auc_std"],
+                cv_metrics["cv_pr_auc_mean"], cv_metrics["cv_pr_auc_std"],
+            )
+
+            mlflow.log_metric("train_accuracy", holdout_metrics["train_accuracy"])
+            mlflow.log_metric("test_accuracy", holdout_metrics["test_accuracy"])
+            mlflow.log_metric("test_f1", holdout_metrics["test_f1"])
+            mlflow.log_metric("overfitting_gap", holdout_metrics["overfitting_gap"])
+
+            if not np.isnan(holdout_metrics["auc_roc"]):
+                mlflow.log_metric("auc_roc", holdout_metrics["auc_roc"])
+            if not np.isnan(holdout_metrics["pr_auc"]):
+                mlflow.log_metric("pr_auc", holdout_metrics["pr_auc"])
+
+            mlflow.log_text(report, "classification_report.txt")
+
+            if log_models:
+                mlflow.sklearn.log_model(model, artifact_path="model")
+
+            results.append(ModelResult(name=name, cv_metrics=cv_metrics, holdout_metrics=holdout_metrics))
+
+    summary = (
+        pd.DataFrame(
+            [
                 {
-                    "use_feature_engineering": use_feature_engineering,
-                    "use_feature_selection": use_feature_selection,
-                    "feature_selection": feature_selection if use_feature_selection else None,
-                    "top_k": top_k if use_feature_selection else None,
-                    "n_features_before_selection": n_features_before,
-                    "n_features_after_selection": n_features_after,
-                },
-                "experiment_config.json",
-            )
+                    "model": r.name,
+                    "cv_pr_auc_mean": r.cv_metrics["cv_pr_auc_mean"],
+                    "cv_pr_auc_std": r.cv_metrics["cv_pr_auc_std"],
+                    "cv_auc_mean": r.cv_metrics["cv_auc_mean"],
+                    "cv_f1_mean": r.cv_metrics["cv_f1_mean"],
+                    "cv_acc_mean": r.cv_metrics["cv_acc_mean"],
+                    "test_pr_auc": r.holdout_metrics["pr_auc"],
+                    "test_auc_roc": r.holdout_metrics["auc_roc"],
+                    "test_f1": r.holdout_metrics["test_f1"],
+                    "test_accuracy": r.holdout_metrics["test_accuracy"],
+                    "train_accuracy": r.holdout_metrics["train_accuracy"],
+                    "overfitting_gap": r.holdout_metrics["overfitting_gap"],
+                }
+                for r in results
+            ]
+        )
+        .sort_values(by="cv_pr_auc_mean", ascending=False)
+    )
 
-    finally:
-        if parent_ctx is not None:
-            mlflow.end_run()
+    logger.info("\n=== Summary (sorted by CV PR-AUC mean) ===\n%s", summary.to_string(index=False))
 
 
 if __name__ == "__main__":
     main(
-        use_feature_engineering=False,
-        use_feature_selection=True,
-        feature_selection="anova",  # ou "anova"
+        use_feature_engineering=True,
+        use_feature_selection=False,
+        feature_selection="feature_importance",
         top_k=10,
         log_models=False,
         parent_run_name="model_comparison",
+        cv_splits=5,
     )
