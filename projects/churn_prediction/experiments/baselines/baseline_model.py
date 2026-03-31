@@ -14,7 +14,7 @@ MLflow:
 - Loga o modelo (apenas LogisticRegression pipeline)
 
 Uso:
-    python src/models/baseline_model.py
+    python experiments/baselines/baseline_model.py
 
 Para visualizar:
     mlflow ui # Inicia UI em http://localhost:5000

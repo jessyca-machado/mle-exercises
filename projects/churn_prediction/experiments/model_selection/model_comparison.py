@@ -19,7 +19,7 @@ Métricas
     - pr_auc (Average Precision, se houver predict_proba)
 
 Uso
-    python src/models/model_comparison.py
+    python experiments/model_selection/model_comparison.py
 
 Para visualizar:
     mlflow ui # Inicia UI em http://localhost:5000
@@ -53,7 +53,7 @@ from sklearn.model_selection import StratifiedKFold, cross_validate
 import mlflow
 
 from src.data.pipelines import prepare_train_test
-from src.models.feature_selection import (
+from experiments.feature_selection.feature_selection import (
     fit_feature_selector,
     apply_selector,
     ImportanceSelector,
@@ -68,7 +68,7 @@ from src.utils.constants import (
     MLFLOW_ARTIFACT_ROOT,
     MLFLOW_TRACKING_URI,
 )
-from src.models.torch_mlp import TorchMLPClassifier
+from experiments.deep_learning.torch_mlp import TorchMLPClassifier
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
