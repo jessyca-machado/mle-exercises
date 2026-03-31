@@ -16,6 +16,20 @@
     ├── README.md
     └── churn_prediction
         ├── README.md
+        ├── experiments
+        │   ├── __init__.py
+        │   ├── baselines
+        │   │   ├── __init__.py
+        │   │   └── baseline_model.py
+        │   ├── deep_learning
+        │   │   ├── __init__.py
+        │   │   └── torch_mlp.py
+        │   ├── feature_selection
+        │   │   ├── __init__.py
+        │   │   └── feature_selection.py
+        │   └── model_selection
+        │       ├── __init__.py
+        │       └── model_comparison.py
         ├── ml_canvas.exercicios.py
         ├── notebooks
         │   └── eda.ipynb
@@ -32,11 +46,7 @@
         │   ├── data_io.py
         │   ├── models
         │   │   ├── __init__.py
-        │   │   ├── baseline_model.py
-        │   │   ├── feature_selection.py
-        │   │   ├── model_comparison.py
         │   │   ├── predict_mlp.py
-        │   │   ├── torch_mlp.py
         │   │   └── train_mlp.py
         │   ├── principal.py
         │   ├── tests.py
@@ -46,6 +56,6 @@
         │       └── helpers.py
         └── uv.lock
 
-11 directories, 30 files
+16 directories, 35 files
 ```
 <!-- TREE:END -->
