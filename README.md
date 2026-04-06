@@ -24,9 +24,6 @@
         │   ├── deep_learning
         │   │   ├── __init__.py
         │   │   └── torch_mlp.py
-        │   ├── feature_selection
-        │   │   ├── __init__.py
-        │   │   └── feature_selection.py
         │   └── model_selection
         │       ├── __init__.py
         │       └── model_comparison.py
@@ -40,6 +37,7 @@
         │   │   ├── __init__.py
         │   │   ├── encoding.py
         │   │   ├── feature_engineering.py
+        │   │   ├── feature_selection.py
         │   │   ├── load_data.py
         │   │   ├── pipelines.py
         │   │   └── preprocess.py
@@ -56,6 +54,6 @@
         │       └── helpers.py
         └── uv.lock
 
-16 directories, 35 files
+15 directories, 34 files
 ```
 <!-- TREE:END -->
