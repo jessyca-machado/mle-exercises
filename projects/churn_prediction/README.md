@@ -12,7 +12,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Windows (PowerShell)
 ```powershell
-irm https://astral.sh/uv/install.ps1 | iex
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 ### Verifique a instalação:
@@ -59,8 +59,8 @@ source .venv/bin/activate
 ```
 
 ### Windows (PowerShell)
-```powershell
-.\.venv\Scripts\Activate.ps1
+```bash
+.\.venv\Scripts\activate.bat
 ```
 
 7. **Executar a suíte de testes unitários**

@@ -13,7 +13,8 @@ class MLCanvas:
         project_name: Nome do projeto.
         business_problem: Descrição do problema de negócio.
         ml_task: Tipo de tarefa ML (classificação, regressão, etc.).
-        success_metrics: Métricas de sucesso do projeto.
+        success_metrics_business: Métricas de negócio de sucesso do projeto.
+        success_metrics_technical: Métricas técnicas de sucesso do projeto.
         data_sources: Fontes de dados disponíveis.
         features: Features candidatas.
         target: Variável alvo.
@@ -24,7 +25,8 @@ class MLCanvas:
     project_name: str = ""
     business_problem: str = ""
     ml_task: str = ""
-    success_metrics: list[str] = field(default_factory=list)
+    success_metrics_business: list[str] = field(default_factory=list)
+    success_metrics_technical: list[str] = field(default_factory=list)
     data_sources: list[str] = field(default_factory=list)
     features: list[str] = field(default_factory=list)
     target: str = ""
@@ -57,7 +59,8 @@ class MLCanvas:
             self.business_problem,
             self.ml_task,
             self.target,
-            self.success_metrics,
+            self.success_metrics_business,
+            self.success_metrics_technical,
         ])
 
     def display(self) -> None:
@@ -68,7 +71,8 @@ class MLCanvas:
         logger.info("Problema de negócio: %s", self.business_problem)
         logger.info("Tarefa ML: %s", self.ml_task)
         logger.info("Variável alvo: %s", self.target)
-        logger.info("Métricas de sucesso: %s", ", ".join(self.success_metrics))
+        logger.info("Métricas de sucesso (Negócio): %s", ", ".join(self.success_metrics_business))
+        logger.info("Métricas de sucesso (Técnicas): %s", ", ".join(self.success_metrics_technical))
         logger.info("Fontes de dados: %s", ", ".join(self.data_sources))
         logger.info("Features candidatas: %s", ", ".join(self.features))
         logger.info("Restrições: %s", ", ".join(self.constraints) or "Nenhuma")
@@ -80,19 +84,19 @@ class MLCanvas:
 
 
 def create_predition_churn_canvas() -> MLCanvas:
-    """Cria exemplo de ML Canvas para o dataset Titanic.
+    """Cria ML Canvas para o dataset Telco Customer Churn da IBM..
 
     Returns:
-        MLCanvas preenchido com dados do projeto Titanic.
+        MLCanvas preenchido com dados do projeto Telco Customer Churn da IBM.
     """
     return MLCanvas(
         project_name="Previsão de Churn — Telco customer churn",
         business_problem=(
-            "Prever se um cliente churnou"
-            "com base em seus comportamentos de uso e interações."
+            "Aumento no churn de clientes em uma empresa de telecomunicações."
         ),
         ml_task="Classificação binária (churnou: 0/1)",
-        success_metrics=["AUC-ROC >= 0.85", "F1-Score >= 0.80", "Precision >= 0.8"],
+        success_metrics_business=["ROI > 150% em 6 meses", "Redução de churn em 20%", "Aumento de receita em $500K/ano"],
+        success_metrics_technical=["F1 > 0.90"],
         data_sources=["Telco-Customer-Churn.csv (IBM)"],
         features=[
             "SeniorCitizen",
@@ -121,7 +125,7 @@ def create_predition_churn_canvas() -> MLCanvas:
             "Latência de predição < 100ms",
         ],
         risks=[
-            "XXX",
+            "Features pouco preditivas e correlações fracas como target",
         ],
     )
 
