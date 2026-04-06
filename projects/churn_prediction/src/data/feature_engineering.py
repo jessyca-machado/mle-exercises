@@ -7,6 +7,7 @@ Uso:
     python src/data/feature_engineering.py
 """
 import logging
+from operator import le
 import pandas as pd
 
 from src.data.load_data import load_data_churn
@@ -32,9 +33,29 @@ def feature_engineering(
     """
     df_feature_engineering = df.copy()
 
-    df_feature_engineering['TotalChargesPerMonth'] = df_feature_engineering['TotalCharges'] / (df_feature_engineering['tenure'] + 1)
+    epsilon = 1e-6
+
+    df_feature_engineering['TotalChargesPerMonth'] = df_feature_engineering['TotalCharges'] / (df_feature_engineering['tenure'] + epsilon)
 
     df_feature_engineering['ltv'] = df_feature_engineering['MonthlyCharges'] * df_feature_engineering['tenure']
+
+    df_feature_engineering["MonthlyCharges_group"] = pd.qcut(
+        df_feature_engineering["MonthlyCharges"],
+        q=5,
+        labels=False,
+        duplicates="drop",
+    ).astype(int)
+
+    df_feature_engineering["TotalCharges_group"] = pd.qcut(
+        df_feature_engineering["TotalCharges"],
+        q=10,
+        labels=False,
+        duplicates="drop",
+    ).astype(int)
+
+    df_feature_engineering["onePlusYearCustomer"] = df_feature_engineering["tenure"].apply(lambda x : 1 if x > 12 else 0)
+
+    df_feature_engineering['MonthlyCharges_squared'] = df_feature_engineering['MonthlyCharges'] ** 2
 
     logger.info("\n--- %s ---", stage_name)
     logger.info("First 10 rows of df_feature_engineering:\n%s", df_feature_engineering.head(10).to_string(index=False))

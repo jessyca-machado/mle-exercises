@@ -41,10 +41,14 @@ from sklearn.svm import SVC
 from sklearn.metrics import (
     classification_report,
     accuracy_score,
+    precision_score,
+    recall_score,
     f1_score,
     roc_auc_score,
     average_precision_score,
+    confusion_matrix,
     make_scorer,
+    precision_recall_curve,
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -53,13 +57,9 @@ from sklearn.model_selection import StratifiedKFold, cross_validate
 import mlflow
 
 from src.data.pipelines import prepare_train_test
-from experiments.feature_selection.feature_selection import (
-    fit_feature_selector,
-    apply_selector,
-    ImportanceSelector,
-    AnovaSelector,
-)
+from src.data.feature_selection import ImportanceSelector, AnovaSelector
 from src.utils.constants import (
+    TARGET_COL,
     RANDOM_STATE,
     TEST_SIZE,
     FEATURES_COLS,
@@ -105,6 +105,28 @@ def pr_auc_scorer(estimator, X, y_true):
     return average_precision_score(y_true, y_proba)
 
 
+def find_best_threshold_f1(
+        y_true: pd.Series,
+        y_proba: np.ndarray
+) -> Tuple[float, float]:
+    """
+    Encontra threshold que maximiza F1 a partir da curva Precision-Recall.
+
+    Args:
+        y_true: Série com os rótulos verdadeiros (0/1).
+        y_proba: Array com as probabilidades preditas para a classe positiva (1).
+    
+    Returns:
+        (best_threshold, best_f1)
+    """
+    precision, recall, thresholds = precision_recall_curve(y_true, y_proba)
+
+    f1 = 2 * (precision[:-1] * recall[:-1]) / (precision[:-1] + recall[:-1] + 1e-12)
+    best_idx = int(np.argmax(f1))
+
+    return float(thresholds[best_idx]), float(f1[best_idx])
+
+
 def cross_validate_model(
     model: Pipeline,
     X_train: pd.DataFrame,
@@ -112,11 +134,26 @@ def cross_validate_model(
     cv_splits: int = 5,
     n_jobs: int = -1,
 ) -> Dict[str, float]:
+    """
+    Realiza cross-validation estratificada e calcula métricas.
+
+    Args:
+        model: Pipeline sklearn a ser avaliado.
+        X_train: Features de treino.
+        y_train: Target de treino.
+        cv_splits: Número de folds para cross-validation.
+        n_jobs: Número de jobs para paralelização (-1 para usar todos).
+
+    Returns:
+        Dicionário com métricas médias e std: accuracy, f1, auc_roc, pr_auc.
+    """
     cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_STATE)
 
     scoring = {
         "acc": "accuracy",
-        "f1": "f1",
+        "precision": make_scorer(precision_score, pos_label=1),
+        "recall": make_scorer(recall_score, pos_label=1),
+        "f1": make_scorer(f1_score, pos_label=1),
         "roc_auc": roc_auc_scorer,
         "pr_auc": pr_auc_scorer,
     }
@@ -135,6 +172,10 @@ def cross_validate_model(
     return {
         "cv_acc_mean": float(out["test_acc"].mean()),
         "cv_acc_std": float(out["test_acc"].std()),
+        "cv_precision_mean": float(out["test_precision"].mean()),
+        "cv_precision_std": float(out["test_precision"].std()),
+        "cv_recall_mean": float(out["test_recall"].mean()),
+        "cv_recall_std": float(out["test_recall"].std()),
         "cv_f1_mean": float(out["test_f1"].mean()),
         "cv_f1_std": float(out["test_f1"].std()),
         "cv_auc_mean": float(out["test_roc_auc"].mean()),
@@ -151,11 +192,16 @@ def train_and_evaluate(
     y_train: pd.Series,
     y_test: pd.Series,
     model_name: str,
+    optimize_threshold: bool = True,
 ) -> Tuple[Dict[str, float], str]:
     """
     Treina um modelo e calcula métricas no conjunto de teste.
 
     Centralizar lógica de treino/avaliação e padronizar o logging de métricas.
+
+    - se optimize_threshold=True e o modelo tem predict_proba:
+        - encontra o melhor threshold no TREINO, que maximize F1
+        - aplica no TESTE e calcula métricas
 
     Args:
         model: Pipeline sklearn (ou estimador compatível com .fit/.predict).
@@ -182,40 +228,95 @@ def train_and_evaluate(
     logger.info("\n--- %s ---", model_name)
     logger.info(report)
 
+    cm = confusion_matrix(y_test, y_pred_test)
+    logger.info("Matriz de Confusão:\n%s", cm)
+        
     metrics: Dict[str, float] = {
         "train_accuracy": float(accuracy_score(y_train, y_pred_train)),
+        "train_f1": float(f1_score(y_train, y_pred_train, pos_label=1)),
         "test_accuracy": float(accuracy_score(y_test, y_pred_test)),
+        "test_precision": float(precision_score(y_test, y_pred_test, pos_label=1)),
+        "test_recall": float(recall_score(y_test, y_pred_test, pos_label=1)),
         "test_f1": float(f1_score(y_test, y_pred_test, pos_label=1)),
     }
-    metrics["overfitting_gap"] = float(metrics["train_accuracy"] - metrics["test_accuracy"])
+    metrics["overfitting_gap"] = float(metrics["train_f1"] - metrics["test_f1"])
 
     if hasattr(model, "predict_proba"):
-        y_proba = model.predict_proba(X_test)[:, 1]
-        metrics["auc_roc"] = float(roc_auc_score(y_test, y_proba))
-        metrics["pr_auc"] = float(average_precision_score(y_test, y_proba))
+        train_proba = model.predict_proba(X_train)[:, 1]
+        test_proba = model.predict_proba(X_test)[:, 1]
+
+        # Sanity checks de tamanho (isso pega exatamente o erro que você viu)
+        if len(train_proba) != len(y_train):
+            raise ValueError(
+                f"[{model_name}] predict_proba(X_train) retornou {len(train_proba)} "
+                f"probabilidades, mas y_train tem {len(y_train)}"
+            )
+        if len(test_proba) != len(y_test):
+            raise ValueError(
+                f"[{model_name}] predict_proba(X_test) retornou {len(test_proba)} "
+                f"probabilidades, mas y_test tem {len(y_test)}"
+            )
+        
+        metrics["auc_roc"] = float(roc_auc_score(y_test, test_proba))
+        metrics["pr_auc"] = float(average_precision_score(y_test, test_proba))
+
+        if optimize_threshold:
+            best_thr, best_f1_train = find_best_threshold_f1(y_train, train_proba)
+
+            y_pred_test_opt = (test_proba >= best_thr).astype(int)
+
+            y_pred_test_opt = np.asarray(y_pred_test_opt).ravel()
+            y_test_arr = np.asarray(y_test).ravel()
+            if len(y_pred_test_opt) != len(y_test_arr):
+                raise ValueError(
+                    f"[{model_name}] y_pred_test_opt tem {len(y_pred_test_opt)} "
+                    f"e y_test tem {len(y_test_arr)}"
+                )
+
+            metrics["best_threshold_f1"] = float(best_thr)
+            metrics["best_threshold_train_f1"] = float(best_f1_train)
+
+            metrics["opt_test_accuracy"] = float(accuracy_score(y_test_arr, y_pred_test_opt))
+            metrics["opt_test_precision"] = float(precision_score(y_test_arr, y_pred_test_opt, pos_label=1))
+            metrics["opt_test_recall"] = float(recall_score(y_test_arr, y_pred_test_opt, pos_label=1))
+            metrics["opt_test_f1"] = float(f1_score(y_test_arr, y_pred_test_opt, pos_label=1))
     else:
         metrics["auc_roc"] = float("nan")
         metrics["pr_auc"] = float("nan")
 
     logger.info(
-        "Metrics | train_acc=%.4f test_acc=%.4f f1=%.4f auc_roc=%.4f pr_auc=%.4f gap=%.4f",
+        "Metrics | train_acc=%.4f train_f1=%.4f test_acc=%.4f test_precision=%.4f test_recall=%.4f test_f1=%.4f auc_roc=%.4f pr_auc=%.4f gap=%.4f",
         metrics["train_accuracy"],
+        metrics["train_f1"],
         metrics["test_accuracy"],
+        metrics["test_precision"],
+        metrics["test_recall"],
         metrics["test_f1"],
         metrics["auc_roc"],
         metrics["pr_auc"],
         metrics["overfitting_gap"],
     )
+
+    if "opt_test_f1" in metrics:
+        logger.info(
+            "Opt-Threshold | thr=%.4f train_f1@thr=%.4f opt_test_f1=%.4f opt_test_precision=%.4f opt_test_recall=%.4f",
+            metrics["best_threshold_f1"],
+            metrics["best_threshold_train_f1"],
+            metrics["opt_test_f1"],
+            metrics["opt_test_precision"],
+            metrics["opt_test_recall"],
+        )
+
     return metrics, report
 
 
 def main(
     use_feature_engineering: bool = True,
     use_feature_selection: bool = True,
-    feature_selection: str = "feature_importance",
-    top_k: int = 10,
+    feature_selection: str = "anova",
+    top_k: int = 20,
     log_models: bool = False,
-    parent_run_name: Optional[str] = "model_comparison",  # mantido na assinatura, mas não usado
+    parent_run_name: Optional[str] = "model_comparison",
     cv_splits: int = 5,
 ) -> None:
     """
@@ -237,32 +338,17 @@ def main(
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    X_train, X_test, y_train, y_test, encoder = prepare_train_test(
+    X_train, X_test, y_train, y_test, encoder, selector = prepare_train_test(
         features=FEATURES_COLS,
-        target="Churn",
+        target=TARGET_COL,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
         drop_first=True,
         use_feature_engineering=use_feature_engineering,
+        use_feature_selection=use_feature_selection,
+        top_k=top_k,
+        feature_selection=feature_selection,
     )
-
-    n_features_before = int(X_train.shape[1])
-    logger.info("Antes da seleção: %d features", n_features_before)
-
-    selector = None
-    if use_feature_selection:
-        selector = fit_feature_selector(
-            X_train,
-            y_train,
-            top_k=top_k,
-            random_state=RANDOM_STATE,
-            feature_selection=feature_selection,
-        )
-        X_train = apply_selector(X_train, selector)
-        X_test = apply_selector(X_test, selector)
-
-    n_features_after = int(X_train.shape[1])
-    logger.info("Depois da seleção: %d features", n_features_after)
 
     models: List[Tuple[str, Pipeline]] = [
         (
@@ -312,8 +398,6 @@ def main(
             mlflow.log_param("use_feature_selection", bool(use_feature_selection))
             mlflow.log_param("feature_selection", feature_selection if use_feature_selection else "none")
             mlflow.log_param("top_k", int(top_k) if use_feature_selection else 0)
-            mlflow.log_param("n_features_before_selection", n_features_before)
-            mlflow.log_param("n_features_after_selection", n_features_after)
             mlflow.log_param("cv_splits", int(cv_splits))
 
             try:
@@ -358,6 +442,7 @@ def main(
                 y_train=y_train,
                 y_test=y_test,
                 model_name=name,
+                optimize_threshold=False,
             )
 
             logger.info(
@@ -370,7 +455,10 @@ def main(
             )
 
             mlflow.log_metric("train_accuracy", holdout_metrics["train_accuracy"])
+            mlflow.log_metric("train_f1", holdout_metrics["train_f1"])
             mlflow.log_metric("test_accuracy", holdout_metrics["test_accuracy"])
+            mlflow.log_metric("test_precision", holdout_metrics["test_precision"])
+            mlflow.log_metric("test_recall", holdout_metrics["test_recall"])
             mlflow.log_metric("test_f1", holdout_metrics["test_f1"])
             mlflow.log_metric("overfitting_gap", holdout_metrics["overfitting_gap"])
 
@@ -378,6 +466,14 @@ def main(
                 mlflow.log_metric("auc_roc", holdout_metrics["auc_roc"])
             if not np.isnan(holdout_metrics["pr_auc"]):
                 mlflow.log_metric("pr_auc", holdout_metrics["pr_auc"])
+
+            if "best_threshold_f1" in holdout_metrics:
+                mlflow.log_param("best_threshold_f1", holdout_metrics["best_threshold_f1"])
+                mlflow.log_metric("opt_test_accuracy", holdout_metrics["opt_test_accuracy"])
+                mlflow.log_metric("opt_test_precision", holdout_metrics["opt_test_precision"])
+                mlflow.log_metric("opt_test_recall", holdout_metrics["opt_test_recall"])
+                mlflow.log_metric("opt_test_f1", holdout_metrics["opt_test_f1"])
+                mlflow.log_metric("best_threshold_train_f1", holdout_metrics["best_threshold_train_f1"])
 
             mlflow.log_text(report, "classification_report.txt")
 
@@ -400,25 +496,24 @@ def main(
                     "test_auc_roc": r.holdout_metrics["auc_roc"],
                     "test_f1": r.holdout_metrics["test_f1"],
                     "test_accuracy": r.holdout_metrics["test_accuracy"],
+                    "test_precision": r.holdout_metrics["test_precision"],
+                    "test_recall": r.holdout_metrics["test_recall"],
+                    "train_f1": r.holdout_metrics["train_f1"],
                     "train_accuracy": r.holdout_metrics["train_accuracy"],
                     "overfitting_gap": r.holdout_metrics["overfitting_gap"],
+                    "opt_test_f1": r.holdout_metrics.get("opt_test_f1", np.nan),
+                    "opt_test_precision": r.holdout_metrics.get("opt_test_precision", np.nan),
+                    "opt_test_recall": r.holdout_metrics.get("opt_test_recall", np.nan),
+                    "best_threshold_f1": r.holdout_metrics.get("best_threshold_f1", np.nan),
                 }
                 for r in results
             ]
         )
-        .sort_values(by="cv_pr_auc_mean", ascending=False)
+        .sort_values(by="cv_f1_mean", ascending=False)
     )
 
-    logger.info("\n=== Summary (sorted by CV PR-AUC mean) ===\n%s", summary.to_string(index=False))
+    logger.info("\n=== Summary (sorted by CV F1 mean) ===\n%s", summary.to_string(index=False))
 
 
 if __name__ == "__main__":
-    main(
-        use_feature_engineering=True,
-        use_feature_selection=False,
-        feature_selection="feature_importance",
-        top_k=10,
-        log_models=False,
-        parent_run_name="model_comparison",
-        cv_splits=5,
-    )
+    main()

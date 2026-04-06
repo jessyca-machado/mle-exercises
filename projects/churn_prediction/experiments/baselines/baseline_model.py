@@ -7,6 +7,7 @@
     1) most_frequent (baseline "ingênuo" que pode prever só a classe 0)
     2) stratified (baseline que sorteia classes conforme a proporção, evitando prever só 0)
 - Usa StandardScaler para normalização dos dados na pipeline LogisticRegression.
+- Persistir o modelo de regressão logística utilizando joblib para futura referência e comparação.
 
 MLflow:
 - Cria 1 run por modelo (Dummy MF, Dummy Strat, Logistic Regression)
@@ -25,6 +26,9 @@ import numpy as np
 import pandas as pd
 import mlflow
 
+from pathlib import Path
+import joblib
+
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -35,6 +39,7 @@ from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
+    confusion_matrix,
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -42,6 +47,7 @@ from sklearn.preprocessing import StandardScaler
 from src.data.pipelines import prepare_train_test
 from src.utils.helpers import log_class_distribution
 from src.utils.constants import (
+    TARGET_COL,
     RANDOM_STATE,
     TEST_SIZE,
     FEATURES_COLS,
@@ -79,7 +85,10 @@ def train_and_evaluate(
     y_pred = model.predict(X_test)
 
     logger.info("\n--- %s ---", model_name)
-    logger.info(classification_report(y_test, y_pred))
+    logger.info(classification_report(y_test, y_pred, zero_division=0))
+
+    cm = confusion_matrix(y_test, y_pred)
+    logger.info("Matriz de Confusão:\n%s", cm)
 
     metrics: dict[str, float] = {}
     metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
@@ -115,13 +124,16 @@ def main() -> None:
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    X_train, X_test, y_train, y_test, encoder = prepare_train_test(
+    X_train, X_test, y_train, y_test, encoder, selector = prepare_train_test(
         features=FEATURES_COLS,
-        target="Churn",
+        target=TARGET_COL,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
         drop_first=True,
         use_feature_engineering=False,
+        use_feature_selection=False,
+        top_k=10,
+        feature_selection=None,
     )
 
     logger.info("Treino: %d | Teste: %d", len(X_train), len(X_test))
@@ -151,7 +163,7 @@ def main() -> None:
     lr_pipeline = Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("clf", LogisticRegression(max_iter=1000, random_state=RANDOM_STATE)),
+            ("clf", LogisticRegression(random_state=RANDOM_STATE)),
         ]
     )
 
@@ -190,6 +202,22 @@ def main() -> None:
             mlflow.log_metric("auc_roc", lr_metrics["auc_roc"])
         if "pr_auc" in lr_metrics and not np.isnan(lr_metrics["pr_auc"]):
             mlflow.log_metric("pr_auc", lr_metrics["pr_auc"])
+
+        mlflow.sklearn.log_model(
+            sk_model=lr_pipeline,
+            name="model",
+            serialization_format="skops",
+            pip_requirements=[],
+        )
+
+        model_dir = Path("models")
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / "baseline_model.joblib"
+
+        joblib.dump(lr_pipeline, model_path)
+        logger.info("Modelo salvo em: %s", model_path)
+
+        mlflow.log_artifact(str(model_path), artifact_path="joblib_model")
 
     logger.info("\n=== Comparação (Accuracy) ===")
     logger.info("Acc Dummy(most_frequent): %.4f", dummy_mf_metrics["accuracy"])

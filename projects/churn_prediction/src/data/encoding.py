@@ -2,6 +2,7 @@
 
 - fit: aplica get_dummies no treino e guarda as colunas resultantes.
 - transform: aplica get_dummies no teste e reindexa para as colunas do treino.
+- como a variável target é altamente desbalanceada no dataset, aplica o stratify no train_test_split para manter a proporção de classes.
 
 Uso:
     python src/data/encoding.py
@@ -16,7 +17,7 @@ from sklearn.model_selection import train_test_split
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.data.feature_engineering import feature_engineering
-from src.utils.constants import YES_NO_COLS, FEATURES_COLS
+from src.utils.constants import YES_NO_COLS, FEATURES_COLS, TARGET_COL
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -121,7 +122,7 @@ def main() -> None:
     df_feature_engineering = feature_engineering(df_clean, "Dataset after feature engineering")
 
     X_raw = df_feature_engineering[FEATURES_COLS].copy()
-    y = df_feature_engineering["Churn"].copy()
+    y = df_feature_engineering[TARGET_COL].copy()
 
     X_train_raw, X_test_raw, y_train, y_test = train_test_split(
         X_raw,

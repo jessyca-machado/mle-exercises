@@ -9,6 +9,7 @@ Uso:
 
 """
 import logging
+from statistics import median
 import pandas as pd
 import numpy as np
 
@@ -85,11 +86,16 @@ def impute_missing(
     Returns:
         Dataframe com a transformação final
     """
+    # Regra específica para TotalCharges. Os clientes que possuem a TotalCharges não fecharam o 1º mês de faturamento, então o valor será igual ao MonthlyCharges.
+    if 'TotalCharges' in num_cols_null and 'TotalCharges' in df.columns:
+        if 'MonthlyCharges' in df.columns:
+            mask = df['TotalCharges'].isna()
+            df.loc[mask, 'TotalCharges'] = df.loc[mask, 'MonthlyCharges']
 
     for col in num_cols_null:
         if col in df.columns:
             median = df[col].median()
-            df[col].fillna(median, inplace=True)
+            df[col] = df[col].fillna(median)
 
     all_cat_boll_cols = cat_cols_null + bool_cols_null
 
