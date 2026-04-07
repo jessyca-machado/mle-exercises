@@ -31,6 +31,7 @@
         ├── notebooks
         │   └── eda.ipynb
         ├── pyproject.toml
+        ├── requirements.txt
         ├── src
         │   ├── __init__.py
         │   ├── data
@@ -42,6 +43,8 @@
         │   │   ├── pipelines.py
         │   │   └── preprocess.py
         │   ├── data_io.py
+        │   ├── infra
+        │   │   └── jobs
         │   ├── models
         │   │   ├── __init__.py
         │   │   ├── predict_mlp.py
@@ -54,6 +57,6 @@
         │       └── helpers.py
         └── uv.lock
 
-15 directories, 34 files
+17 directories, 35 files
 ```
 <!-- TREE:END -->
