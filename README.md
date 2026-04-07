@@ -43,8 +43,9 @@
         │   │   ├── pipelines.py
         │   │   └── preprocess.py
         │   ├── data_io.py
-        │   ├── infra
-        │   │   └── jobs
+        │   ├── jobs
+        │   │   ├── __init__.py
+        │   │   └── train.py
         │   ├── models
         │   │   ├── __init__.py
         │   │   ├── predict_mlp.py
@@ -57,6 +58,6 @@
         │       └── helpers.py
         └── uv.lock
 
-17 directories, 35 files
+16 directories, 37 files
 ```
 <!-- TREE:END -->
