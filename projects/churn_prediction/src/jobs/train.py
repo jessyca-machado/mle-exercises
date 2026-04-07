@@ -4,7 +4,7 @@ Este script carrega os dados, pré-processa, divide em treino e teste, e treina 
 Os resultados são rastreados usando MLflow, incluindo métricas e artefatos do modelo
 
 Uso:
-    python src/infra/jobs/train.py
+    python src/jobs/train.py
 
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
