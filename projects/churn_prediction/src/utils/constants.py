@@ -29,12 +29,21 @@ FEATURES_COLS: list[str] = [
         "PaymentMethod",
         "MonthlyCharges",
         "TotalCharges",
-    ]
+]
 
 YES_NO_COLS: list[str] = [
         "Partner",
         "Dependents",
         "PhoneService",
+        "PaperlessBilling",
+        "Churn",
+]
+
+CAT_COLS: list[str] = [
+        "gender",
+        "InternetService",
+        "Contract",
+        "PaymentMethod",
         "MultipleLines",
         "OnlineSecurity",
         "OnlineBackup",
@@ -42,9 +51,21 @@ YES_NO_COLS: list[str] = [
         "TechSupport",
         "StreamingTV",
         "StreamingMovies",
+]
+
+NUM_COLS: list[str] = [
+        "tenure",
+        "MonthlyCharges",
+        "TotalCharges",
+]
+
+BOL_COLS: list[str] = [
+        "Partner",
+        "Dependents",
+        "PhoneService",
         "PaperlessBilling",
-        "Churn",
-    ]
+        "SeniorCitizen"
+]
 
 MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"
 

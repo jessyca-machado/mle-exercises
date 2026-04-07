@@ -338,7 +338,7 @@ def main(
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    X_train, X_test, y_train, y_test, encoder, selector = prepare_train_test(
+    X_train, X_test, y_train, y_test, pipe = prepare_train_test(
         features=FEATURES_COLS,
         target=TARGET_COL,
         test_size=TEST_SIZE,
@@ -400,20 +400,15 @@ def main(
             mlflow.log_param("top_k", int(top_k) if use_feature_selection else 0)
             mlflow.log_param("cv_splits", int(cv_splits))
 
+            mlflow.log_param("n_features_train", int(X_train.shape[1]))
+            mlflow.log_text(str(pipe), "data_pipeline.txt")
             try:
-                mlflow.log_param("encoder_num_columns", int(len(encoder.columns_)))
+                mlflow.log_text("\n".join(list(X_train.columns)), "final_feature_names.txt")
             except Exception:
                 pass
 
-            if use_feature_selection and selector is not None:
-                mlflow.log_text("\n".join(selector.selected_features_), "selected_features.txt")
-                if isinstance(selector, ImportanceSelector):
-                    mlflow.log_text(selector.importances_.to_string(), "feature_importances_full.txt")
-                    mlflow.log_text(selector.importances_.head(50).to_string(), "feature_importances_top50.txt")
-                elif isinstance(selector, AnovaSelector):
-                    mlflow.log_text(selector.scores_.to_string(), "anova_scores_full.txt")
-                    mlflow.log_text(selector.pvalues_.to_string(), "anova_pvalues_full.txt")
-                    mlflow.log_text(selector.scores_.head(50).to_string(), "anova_scores_top50.txt")
+            if use_feature_selection and "select" in pipe.named_steps:
+                mlflow.log_text("\n".join(list(X_train.columns)), "selected_features.txt")
 
             if name == "MLP_torch":
                 clf = model.named_steps["clf"]
