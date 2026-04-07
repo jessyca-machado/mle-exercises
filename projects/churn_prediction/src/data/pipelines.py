@@ -99,8 +99,10 @@ class SklearnPipelineRunner:
         Se k_best for None, seleciona todas as features.
         """
         k = self.k_best if self.k_best is not None else "all"
+        feature_selector = SelectKBest(score_func=f_classif, k=k)
+        logger.info("Feature selection transformer: %s", feature_selector)
 
-        return SelectKBest(score_func=f_classif, k=k)
+        return feature_selector
 
 
     def _build_pipeline(self) -> Pipeline:
@@ -211,7 +213,11 @@ class SklearnPipelineRunner:
             numpy.ndarray: Array com as probabilidades da classe positiva.
         """
         if hasattr(self.best_model, "predict_proba"):
-            return self.best_model.predict_proba(X)[:, 1]
+            y_pred_proba = self.best_model.predict_proba(X)
+            logger.info("Predições de probabilidades: %s", y_pred_proba[:, 1][:10])
+
+            return y_pred_proba[:, 1]
+
         raise AttributeError("Modelo não suporta predict_proba (necessário p/ AUC).")
 
 
@@ -306,9 +312,12 @@ class SklearnPipelineRunner:
         """
         model = self.best_model.named_steps["model"]
         if hasattr(model, "feature_importances_"):
-            return model.feature_importances_
+            feature_importances = model.feature_importances_
+            logger.info("Feature importances: %s", feature_importances[:10])
+            return feature_importances
         if hasattr(model, "coef_"):
-            return model.coef_
+            logger.info("Feature coefficients: %s", model.coef_[0][:10])
+            return model.coef_[0]
 
         return None
 
@@ -359,12 +368,12 @@ def main():
 
     model = LogisticRegression(random_state=RANDOM_STATE)
 
-    num_col = NUM_COLS + BOL_COLS
+    # num_col = NUM_COLS + BOL_COLS
 
     runner = SklearnPipelineRunner(
         model=model,
         categorical_cols=CAT_COLS,
-        numerical_cols=num_col,
+        numerical_cols=NUM_COLS,
         use_feature_engineering=False,
         feature_engineering_transformer=None,
         use_feature_selection=False,
@@ -384,6 +393,7 @@ def main():
 
     runner.fit(X_train, y_train)
     runner.predict(X_test)
+    runner.predict_proba(X_test)
     runner.evaluate(X_test, y_test, include_auc=True)
     runner.save("churn_model_pipeline.joblib")
 
