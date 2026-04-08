@@ -36,9 +36,7 @@
         │   ├── __init__.py
         │   ├── data
         │   │   ├── __init__.py
-        │   │   ├── encoding.py
         │   │   ├── feature_engineering.py
-        │   │   ├── feature_selection.py
         │   │   ├── load_data.py
         │   │   ├── pipelines.py
         │   │   └── preprocess.py
@@ -58,6 +56,6 @@
         │       └── helpers.py
         └── uv.lock
 
-16 directories, 37 files
+16 directories, 35 files
 ```
 <!-- TREE:END -->
