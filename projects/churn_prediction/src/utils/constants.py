@@ -57,6 +57,9 @@ NUM_COLS: list[str] = [
         "tenure",
         "MonthlyCharges",
         "TotalCharges",
+        "ltv",
+        "TotalChargesPerMonth",
+        "MonthlyCharges_squared",
 ]
 
 BOL_COLS: list[str] = [
@@ -64,7 +67,21 @@ BOL_COLS: list[str] = [
         "Dependents",
         "PhoneService",
         "PaperlessBilling",
-        "SeniorCitizen"
+        "SeniorCitizen",
+        "onePlusYearCustomer",
+        "MultipleLines_flag",
+        "InternetService_Flag",
+        "OnlineSecurity_Flag",
+        "OnlineBackup_Flag",
+        "DeviceProtection_Flag",
+        "TechSupport_Flag",
+        "StreamingTV_Flag",
+        "StreamingMovies_Flag",
+]
+
+BIN_COLS: list[str] = [
+        "MonthlyCharges_group",
+        "TotalCharges_group",
 ]
 
 MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"

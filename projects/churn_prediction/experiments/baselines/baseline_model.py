@@ -1,122 +1,83 @@
-"""Baseline model — treinamento de modelos heurístico e de regressão logística.
+"""
+Baseline model — treinamento de modelos baseline (Dummy) e LogisticRegression usando a pipeline robusta do projeto.
 
-- Demonstra como estabelecer baselines sólidas antes de modelos complexos.
-- Inclui logging de hiperparâmetros e métricas para comparação.
-- Loga distribuição de classes (para evidenciar desbalanceamento).
-- Usa dois baselines:
-    1) most_frequent (baseline "ingênuo" que pode prever só a classe 0)
-    2) stratified (baseline que sorteia classes conforme a proporção, evitando prever só 0)
-- Usa StandardScaler para normalização dos dados na pipeline LogisticRegression.
-- Persistir o modelo de regressão logística utilizando joblib para futura referência e comparação.
-
-MLflow:
-- Cria 1 run por modelo (Dummy MF, Dummy Strat, Logistic Regression)
-- Loga parâmetros, métricas, artefatos (classification report)
-- Loga o modelo (apenas LogisticRegression pipeline)
+O que este script faz:
+- load_data_churn -> pre_processing -> split
+- Treina 3 modelos com o mesmo pipeline (SklearnPipelineRunner):
+    1) DummyClassifier(most_frequent) - baseline "ingênuo" que pode prever só a classe 0
+    2) DummyClassifier(stratified) - baseline que sorteia classes conforme a proporção, evitando prever só 0
+    3) LogisticRegression
+- Loga métricas no MLflow (1 run pai + runs filhos aninhados)
+- Loga modelo (pipeline completo) como artefato
+- (Opcional) salva o melhor modelo em joblib
 
 Uso:
     python experiments/baselines/baseline_model.py
 
 Para visualizar:
-    mlflow ui # Inicia UI em http://localhost:5000
+    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+from __future__ import annotations
+
+import os
 import logging
-
-import numpy as np
-import pandas as pd
-import mlflow
-
 from pathlib import Path
-import joblib
+import pandas as pd
 
+import mlflow
+import mlflow.sklearn
+
+from sklearn.model_selection import train_test_split
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    classification_report,
-    roc_auc_score,
-    f1_score,
-    average_precision_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    confusion_matrix,
-)
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+import joblib
 
-from src.data.pipelines import prepare_train_test
-from src.utils.helpers import log_class_distribution
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
+from src.data.pipelines import SklearnPipelineRunner
+
 from src.utils.constants import (
-    TARGET_COL,
-    RANDOM_STATE,
-    TEST_SIZE,
     FEATURES_COLS,
-    MLFLOW_TRACKING_URI,
-    MLFLOW_EXPERIMENT_NAME,
-    MLFLOW_ARTIFACT_ROOT,
+    YES_NO_COLS,
+    TARGET_COL,
+    TEST_SIZE,
+    RANDOM_STATE,
+    CAT_COLS,
+    NUM_COLS,
+    BOL_COLS,
+    BIN_COLS,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+class EnsureModelNameFilter(logging.Filter):
+    """Garante que todo LogRecord tenha o campo model_name para o formatter não quebrar."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "model_name"):
+            record.model_name = "-"
+        return True
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s [%(model_name)s] %(name)s: %(message)s",
+)
+logging.getLogger().addFilter(EnsureModelNameFilter())
 logger = logging.getLogger(__name__)
 
 
-def train_and_evaluate(
-    model: Pipeline,
-    X_train: pd.DataFrame,
-    X_test: pd.DataFrame,
-    y_train: pd.Series,
-    y_test: pd.Series,
-    model_name: str,
-) -> dict[str, float]:
-    """Treina e avalia um modelo, retornando métricas.
-
-    Args:
-        model: Pipeline sklearn a ser treinado.
-        X_train: Features de treino.
-        X_test: Features de teste.
-        y_train: Target de treino.
-        y_test: Target de teste.
-        model_name: Nome do modelo para logging.
-
-    Returns:
-        Dicionário com métricas: accuracy, f1_score, auc_roc, pr_auc.
-    """
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    logger.info("\n--- %s ---", model_name)
-    logger.info(classification_report(y_test, y_pred, zero_division=0))
-
-    cm = confusion_matrix(y_test, y_pred)
-    logger.info("Matriz de Confusão:\n%s", cm)
-
-    metrics: dict[str, float] = {}
-    metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
-    metrics["f1"] = float(f1_score(y_test, y_pred, pos_label=1))
-    logger.info("F1 (classe 1): %.4f", metrics["f1"])
-
-    if hasattr(model, "predict_proba"):
-        y_proba = model.predict_proba(X_test)[:, 1]
-        metrics["auc_roc"] = float(roc_auc_score(y_test, y_proba))
-        metrics["pr_auc"] = float(average_precision_score(y_test, y_proba))
-        logger.info("AUC-ROC: %.4f", metrics["auc_roc"])
-        logger.info("PR-AUC (Average Precision): %.4f", metrics["pr_auc"])
-    else:
-        metrics["auc_roc"] = float("nan")
-        metrics["pr_auc"] = float("nan")
-
-    unique_preds, pred_counts = np.unique(y_pred, return_counts=True)
-    pred_dist = dict(zip(unique_preds.tolist(), pred_counts.tolist()))
-    logger.info("Distribuição das predições (classe -> contagem): %s", pred_dist)
-
-    return metrics
+class ModelLogger(logging.LoggerAdapter):
+    """Injecta model_name no campo extra do log (não prefixa msg manualmente)."""
+    def process(self, msg, kwargs):
+        kwargs.setdefault("extra", {})
+        kwargs["extra"]["model_name"] = self.extra["model_name"]
+        return msg, kwargs
 
 
 def _setup_mlflow() -> None:
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
-    mlflow.set_tag("artifact_root_hint", MLFLOW_ARTIFACT_ROOT)
-    mlflow.set_tag("mlflow_backend_store", MLFLOW_TRACKING_URI)
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "churn-baselines")
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
 
 
 def main() -> None:
@@ -124,144 +85,133 @@ def main() -> None:
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
-    X_train, X_test, y_train, y_test, encoder, selector = prepare_train_test(
-        features=FEATURES_COLS,
-        target=TARGET_COL,
+    df = load_data_churn()
+    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset")
+    X_raw = df_clean[FEATURES_COLS].copy()
+    y = df_clean[TARGET_COL].copy()
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_raw,
+        y,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
-        drop_first=True,
-        use_feature_engineering=False,
-        use_feature_selection=False,
-        top_k=10,
-        feature_selection=None,
+        stratify=y if y.nunique() == 2 else None,
     )
 
     logger.info("Treino: %d | Teste: %d", len(X_train), len(X_test))
 
-    name, counts, ratios = log_class_distribution(y_train, "y_train")
-    logger.info("%s | contagens:\n%s", name, counts.to_string())
-    logger.info("%s | proporções:\n%s", name, ratios.to_string())
+    models = {
+        "dummy_most_frequent": DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE),
+        "dummy_stratified": DummyClassifier(strategy="stratified", random_state=RANDOM_STATE),
+        "logreg": LogisticRegression(random_state=RANDOM_STATE),
+    }
 
-    name, counts, ratios = log_class_distribution(y_test, "y_test")
-    logger.info("%s | contagens:\n%s", name, counts.to_string())
-    logger.info("%s | proporções:\n%s", name, ratios.to_string())
+    best = {"model_name": None, "accuracy": float("-inf")}
+    rows: list[dict] = []
 
-    dummy_mf_pipeline = Pipeline(
-        [("clf", DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE))]
-    )
-    dummy_mf_metrics = train_and_evaluate(
-        dummy_mf_pipeline, X_train, X_test, y_train, y_test, "DummyClassifier (most_frequent)"
-    )
+    with mlflow.start_run(run_name="baseline_comparison") as parent_run:
+        mlflow.set_tags({
+            "project": "churn",
+            "task": "binary_classification",
+            "job": "baseline_models",
+        })
 
-    dummy_strat_pipeline = Pipeline(
-        [("clf", DummyClassifier(strategy="stratified", random_state=RANDOM_STATE))]
-    )
-    dummy_strat_metrics = train_and_evaluate(
-        dummy_strat_pipeline, X_train, X_test, y_train, y_test, "DummyClassifier (stratified)"
-    )
+        mlflow.log_params({
+            "test_size": TEST_SIZE,
+            "random_state": RANDOM_STATE,
+            "use_feature_engineering": False,
+            "use_feature_selection": False,
+            "k_best": None,
+            "n_models": len(models),
+        })
 
-    lr_pipeline = Pipeline(
-        [
-            ("scaler", StandardScaler()),
-            ("clf", LogisticRegression(random_state=RANDOM_STATE)),
-        ]
-    )
+        for model_name, model in models.items():
+            mlog = ModelLogger(logger, {"model_name": model_name})
 
-    with mlflow.start_run(run_name="logistic_regression_baseline"):
-        mlflow.log_param("test_size", TEST_SIZE)
-        mlflow.log_param("random_state", RANDOM_STATE)
-        mlflow.log_param("drop_first", True)
-        mlflow.log_param("n_features_after_encoding", int(X_train.shape[1]))
-        mlflow.log_param("encoder_num_columns", int(len(encoder.columns_)))
+            with mlflow.start_run(run_name=model_name, nested=True):
+                mlog.info("Treinando %s", model.__class__.__name__)
 
-        lr_metrics = train_and_evaluate(
-            lr_pipeline,
-            X_train,
-            X_test,
-            y_train,
-            y_test,
-            "LogisticRegression",
+                mlflow.set_tag("model_name", model_name)
+                mlflow.log_param("estimator_class", model.__class__.__name__)
+
+                runner = SklearnPipelineRunner(
+                    model=model,
+                    categorical_cols=CAT_COLS,
+                    numerical_cols=NUM_COLS,
+                    boolean_cols=BOL_COLS,
+                    binned_cols=BIN_COLS,
+                    use_feature_engineering=False,
+                    feature_engineering_transformer=None,
+                    use_feature_selection=False,
+                    k_best=None,
+                    use_grid_search=False,
+                    param_grid={},
+                    cv=5,
+                    scoring="accuracy",
+                    pos_label=1,
+                )
+
+                runner.fit(X_train, y_train)
+
+                mlog.info("Avaliando no teste...")
+                metrics = runner.evaluate(X_test, y_test, include_auc=True)
+                mlog.info("Métricas: %s", metrics)
+
+                rows.append({"model": model_name, **metrics})
+
+                mlflow.log_metrics(metrics)
+
+                mlflow.sklearn.log_model(
+                    sk_model=runner.best_model,
+                    name="model",
+                    serialization_format="skops",
+                    pip_requirements="requirements.txt",
+                )
+
+                acc = metrics.get("accuracy", float("-inf"))
+                if acc > best["accuracy"]:
+                    best = {"model_name": model_name, "accuracy": acc}
+
+        results_df = pd.DataFrame(rows).sort_values("accuracy", ascending=False)
+        logger.info("Resumo métricas por modelo:\n%s", results_df.to_string(index=False))
+
+        mlflow.log_params({"best_model_name": best["model_name"]})
+        mlflow.log_metric("best_accuracy", best["accuracy"])
+        logger.info("Melhor modelo: %s | accuracy=%.4f", best["model_name"], best["accuracy"])
+        logger.info("Parent run_id: %s", parent_run.info.run_id)
+
+    if os.getenv("SAVE_BEST_JOBLIB", "0") == "1":
+        best_name = best["model_name"]
+        if best_name is None:
+            return
+
+        best_model = models[best_name]
+        mlog = ModelLogger(logger, {"model_name": best_name})
+        mlog.info("Re-treinando melhor modelo para salvar em joblib...")
+
+        runner = SklearnPipelineRunner(
+            model=best_model,
+            categorical_cols=CAT_COLS,
+            numerical_cols=NUM_COLS,
+            boolean_cols=BOL_COLS,
+            binned_cols=BIN_COLS,
+            use_feature_engineering=False,
+            feature_engineering_transformer=None,
+            use_feature_selection=False,
+            k_best=None,
+            use_grid_search=False,
+            param_grid={},
+            cv=5,
+            scoring="accuracy",
+            pos_label=1,
         )
-
-        y_pred_train = lr_pipeline.predict(X_train)
-        y_pred_test = lr_pipeline.predict(X_test)
-
-        mlflow.log_text(classification_report(y_test, y_pred_test), "classification_report.txt")
-
-        train_accuracy = accuracy_score(y_train, y_pred_train)
-        test_accuracy = accuracy_score(y_test, y_pred_test)
-
-        mlflow.log_metric("train_accuracy", float(train_accuracy))
-        mlflow.log_metric("test_accuracy", float(test_accuracy))
-        mlflow.log_metric("test_f1_score", float(f1_score(y_test, y_pred_test, pos_label=1)))
-        mlflow.log_metric("test_precision", float(precision_score(y_test, y_pred_test, pos_label=1)))
-        mlflow.log_metric("test_recall", float(recall_score(y_test, y_pred_test, pos_label=1)))
-        mlflow.log_metric("overfitting_gap", float(train_accuracy - test_accuracy))
-
-        if "auc_roc" in lr_metrics and not np.isnan(lr_metrics["auc_roc"]):
-            mlflow.log_metric("auc_roc", lr_metrics["auc_roc"])
-        if "pr_auc" in lr_metrics and not np.isnan(lr_metrics["pr_auc"]):
-            mlflow.log_metric("pr_auc", lr_metrics["pr_auc"])
-
-        mlflow.sklearn.log_model(
-            sk_model=lr_pipeline,
-            name="model",
-            serialization_format="skops",
-            pip_requirements=[],
-        )
+        runner.fit(X_train, y_train)
 
         model_dir = Path("models")
         model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = model_dir / "baseline_model.joblib"
-
-        joblib.dump(lr_pipeline, model_path)
-        logger.info("Modelo salvo em: %s", model_path)
-
-        mlflow.log_artifact(str(model_path), artifact_path="joblib_model")
-
-    logger.info("\n=== Comparação (Accuracy) ===")
-    logger.info("Acc Dummy(most_frequent): %.4f", dummy_mf_metrics["accuracy"])
-    logger.info("Acc Dummy(stratified):    %.4f", dummy_strat_metrics["accuracy"])
-    logger.info("Acc LogisticRegression:   %.4f", lr_metrics["accuracy"])
-
-    logger.info("\n=== Comparação (F1 classe 1) ===")
-    logger.info("F1 Dummy(most_frequent): %.4f", dummy_mf_metrics["f1"])
-    logger.info("F1 Dummy(stratified):    %.4f", dummy_strat_metrics["f1"])
-    logger.info("F1 LogisticRegression:   %.4f", lr_metrics["f1"])
-
-    logger.info("\n=== Comparação (PR-AUC) ===")
-    logger.info("PR-AUC Dummy(most_frequent): %.4f", dummy_mf_metrics["pr_auc"])
-    logger.info("PR-AUC Dummy(stratified):    %.4f", dummy_strat_metrics["pr_auc"])
-    logger.info("PR-AUC LogisticRegression:   %.4f", lr_metrics["pr_auc"])
-
-    logger.info("\n=== Comparação geral (LogisticRegression vs. DummyClassifier(most_frequent)) ===")
-    logger.info(
-        "Ganho de acurácia vs baseline: +%.2f%%",
-        (lr_metrics["accuracy"] - dummy_mf_metrics["accuracy"]) * 100,
-    )
-    logger.info(
-        "Ganho de F1 (classe 1) vs baseline: +%.2f%%",
-        (lr_metrics["f1"] - dummy_mf_metrics["f1"]) * 100,
-    )
-    logger.info(
-        "Ganho de PR-AUC vs baseline: +%.2f%%",
-        (lr_metrics["pr_auc"] - dummy_mf_metrics["pr_auc"]) * 100,
-    )
-
-    logger.info("\n=== Comparação geral (LogisticRegression vs. DummyClassifier(stratified)) ===")
-    logger.info(
-        "Ganho de acurácia vs baseline: +%.2f%%",
-        (lr_metrics["accuracy"] - dummy_strat_metrics["accuracy"]) * 100,
-    )
-    logger.info(
-        "Ganho de F1 (classe 1) vs baseline: +%.2f%%",
-        (lr_metrics["f1"] - dummy_strat_metrics["f1"]) * 100,
-    )
-    logger.info(
-        "Ganho de PR-AUC vs baseline: +%.2f%%",
-        (lr_metrics["pr_auc"] - dummy_strat_metrics["pr_auc"]) * 100,
-    )
-
+        path = model_dir / f"baseline_best_{best_name}.joblib"
+        joblib.dump(runner.best_model, path)
+        mlog.info("Melhor modelo salvo em: %s", path)
 
 if __name__ == "__main__":
     main()

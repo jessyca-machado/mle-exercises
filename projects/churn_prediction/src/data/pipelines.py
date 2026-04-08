@@ -30,9 +30,10 @@ from sklearn.metrics import (
     f1_score
 )
 
+from src.data.feature_engineering import TelcoFeatureEngineeringBins
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
-from src.utils.constants import FEATURES_COLS, YES_NO_COLS, TARGET_COL, TEST_SIZE, RANDOM_STATE, CAT_COLS, NUM_COLS, BOL_COLS
+from src.utils.constants import FEATURES_COLS, YES_NO_COLS, TARGET_COL, TEST_SIZE, RANDOM_STATE, CAT_COLS, NUM_COLS, BOL_COLS, BIN_COLS
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -46,6 +47,8 @@ class SklearnPipelineRunner:
         model,
         categorical_cols=None,
         numerical_cols=None,
+        boolean_cols=None,
+        binned_cols=None,
         use_feature_engineering=False,
         feature_engineering_transformer=None,
         use_feature_selection=False,
@@ -76,6 +79,8 @@ class SklearnPipelineRunner:
         self.model = model
         self.categorical_cols = categorical_cols or []
         self.numerical_cols = numerical_cols or []
+        self.boolean_cols = boolean_cols or []
+        self.binned_cols = binned_cols or []
 
         self.use_feature_engineering = use_feature_engineering
         self.feature_engineering_transformer = feature_engineering_transformer
@@ -127,6 +132,8 @@ class SklearnPipelineRunner:
             transformers=[
                 ("cat", OneHotEncoder(handle_unknown="ignore"), self.categorical_cols),
                 ("num", StandardScaler(), self.numerical_cols),
+                ("bol", "passthrough", self.boolean_cols),
+                ("bin", "passthrough", self.binned_cols)
             ],
             remainder="drop",
             verbose_feature_names_out=False
@@ -156,6 +163,13 @@ class SklearnPipelineRunner:
         Returns:
             self: Retorna a própria instância do pipeline runner após o ajuste.
         """
+        if not self.use_feature_engineering:
+            existing = set(X.columns)
+            self.categorical_cols = [c for c in self.categorical_cols if c in existing]
+            self.numerical_cols   = [c for c in self.numerical_cols   if c in existing]
+            self.boolean_cols     = [c for c in self.boolean_cols     if c in existing]
+            self.binned_cols      = [c for c in self.binned_cols      if c in existing]
+        
         base_pipeline = self._build_pipeline()
 
         if self.use_grid_search:
@@ -368,12 +382,12 @@ def main():
 
     model = LogisticRegression(random_state=RANDOM_STATE)
 
-    # num_col = NUM_COLS + BOL_COLS
-
     runner = SklearnPipelineRunner(
         model=model,
         categorical_cols=CAT_COLS,
         numerical_cols=NUM_COLS,
+        boolean_cols=BOL_COLS,
+        binned_cols=BIN_COLS,
         use_feature_engineering=False,
         feature_engineering_transformer=None,
         use_feature_selection=False,
@@ -392,8 +406,7 @@ def main():
     )
 
     runner.fit(X_train, y_train)
-    runner.predict(X_test)
-    runner.predict_proba(X_test)
+
     runner.evaluate(X_test, y_test, include_auc=True)
     runner.save("churn_model_pipeline.joblib")
 

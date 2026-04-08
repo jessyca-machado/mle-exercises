@@ -18,52 +18,6 @@ from src.utils.constants import YES_NO_COLS
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-def feature_engineering(
-    df: pd.DataFrame,
-    stage_name: str,
-) -> pd.DataFrame:
-    """Realiza a engenharia de features no dataset Telco Customer Churn da IBM.
-
-    Aplica transformação de variáveis numéricas e criação de novas features.
-
-    Args:
-        df: Dataframe a ser transformado.
-
-    Returns:
-        Dataframe com as novas features criadas.
-    """
-    df_feature_engineering = df.copy()
-
-    epsilon = 1e-6
-
-    df_feature_engineering['TotalChargesPerMonth'] = df_feature_engineering['TotalCharges'] / (df_feature_engineering['tenure'] + epsilon)
-
-    df_feature_engineering['ltv'] = df_feature_engineering['MonthlyCharges'] * df_feature_engineering['tenure']
-
-    df_feature_engineering["MonthlyCharges_group"] = pd.qcut(
-        df_feature_engineering["MonthlyCharges"],
-        q=5,
-        labels=False,
-        duplicates="drop",
-    ).astype(int)
-
-    df_feature_engineering["TotalCharges_group"] = pd.qcut(
-        df_feature_engineering["TotalCharges"],
-        q=10,
-        labels=False,
-        duplicates="drop",
-    ).astype(int)
-
-    df_feature_engineering["onePlusYearCustomer"] = df_feature_engineering["tenure"].apply(lambda x : 1 if x > 12 else 0)
-
-    df_feature_engineering['MonthlyCharges_squared'] = df_feature_engineering['MonthlyCharges'] ** 2
-
-    logger.info("\n--- %s ---", stage_name)
-    logger.info("First 10 rows of df_feature_engineering:\n%s", df_feature_engineering.head(10).to_string(index=False))
-
-    return df_feature_engineering
-
-
 class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
     """
     Feature engineering para Telco Churn com bins aprendidos no treino.
@@ -178,14 +132,31 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         df["TotalChargesPerMonth"] = pd.to_numeric(df["TotalCharges"], errors="coerce") / (
             pd.to_numeric(df["tenure"], errors="coerce") + eps
         )
-        df["ltv"] = pd.to_numeric(df["MonthlyCharges"], errors="coerce") * pd.to_numeric(df["tenure"], errors="coerce")
+        df["ltv"] = df["MonthlyCharges"] * df["tenure"]
 
         df["MonthlyCharges_group"] = self._apply_bins(df["MonthlyCharges"], self.monthly_edges_)
+    
         df["TotalCharges_group"] = self._apply_bins(df["TotalCharges"], self.total_edges_)
 
-        df["onePlusYearCustomer"] = pd.to_numeric(df["tenure"], errors="coerce").apply(lambda x: 1 if x > 12 else 0)
+        df["onePlusYearCustomer"] = (df["tenure"] > 12).astype(int)
 
-        df["MonthlyCharges_squared"] = pd.to_numeric(df["MonthlyCharges"], errors="coerce") ** 2
+        df["MonthlyCharges_squared"] = df["MonthlyCharges"] ** 2
+
+        df["MultipleLines_flag"] = (df["MultipleLines"] == "Yes").astype(int)
+
+        df["InternetService_Flag"] = (df["InternetService"] != "No").astype(int)
+
+        df["OnlineSecurity_Flag"] = (df["OnlineSecurity"] == "Yes").astype(int)
+
+        df["OnlineBackup_Flag"] = (df["OnlineBackup"] == "Yes").astype(int)
+
+        df["DeviceProtection_Flag"] = (df["DeviceProtection"] == "Yes").astype(int)
+
+        df["TechSupport_Flag"] = (df["TechSupport"] == "Yes").astype(int)
+
+        df["StreamingTV_Flag"] = (df["StreamingTV"] == "Yes").astype(int)
+
+        df["StreamingMovies_Flag"] = (df["StreamingMovies"] == "Yes").astype(int)
 
         return df
 
@@ -193,10 +164,12 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
 def main() -> None:
     df = load_data_churn()
     df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features")
-
+    
     fe = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
     df_feature_engineering = fe.fit_transform(df_clean)
-    print(df_feature_engineering.head())
+
+    logger.info("Colunas após feature engineering (%d): %s",
+                df_feature_engineering.shape[1], df_feature_engineering.columns.tolist())
 
 if __name__ == "__main__":
     main()
