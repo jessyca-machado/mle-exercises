@@ -158,7 +158,7 @@ def main() -> None:
                     feature_engineering_transformer=fe_transformer,
                     use_feature_selection=use_fs,
                     k_best=15,
-                    use_grid_search=False,
+                    use_grid_search=True,
                     param_grid={},
                     cv=5,
                     scoring="accuracy",
