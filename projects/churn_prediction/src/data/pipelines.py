@@ -130,7 +130,7 @@ class SklearnPipelineRunner:
 
         preprocessor = ColumnTransformer(
             transformers=[
-                ("cat", OneHotEncoder(handle_unknown="ignore"), self.categorical_cols),
+                ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), self.categorical_cols),
                 ("num", StandardScaler(), self.numerical_cols),
                 ("bol", "passthrough", self.boolean_cols),
                 ("bin", "passthrough", self.binned_cols)
