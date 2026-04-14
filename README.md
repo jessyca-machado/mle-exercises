@@ -21,10 +21,16 @@
         │   ├── baselines
         │   │   ├── __init__.py
         │   │   └── baseline_model.py
-        │   └── deep_learning
+        │   ├── comparison
+        │   │   ├── __init__.py
+        │   │   └── comparison_model.py
+        │   ├── deep_learning
+        │   │   ├── __init__.py
+        │   │   ├── torch_mlp.py
+        │   │   └── torch_mlp_process.py
+        │   └── selection
         │       ├── __init__.py
-        │       ├── torch_mlp.py
-        │       └── torch_mlp_process.py
+        │       └── selection_model.py
         ├── ml_canvas.exercicios.py
         ├── notebooks
         │   └── eda.ipynb
@@ -37,16 +43,20 @@
         │   │   ├── feature_engineering.py
         │   │   ├── load_data.py
         │   │   ├── pipelines.py
-        │   │   └── preprocess.py
+        │   │   ├── preprocess.py
+        │   │   └── transformers.py
         │   ├── data_io.py
         │   ├── jobs
         │   │   ├── __init__.py
         │   │   └── train.py
         │   ├── ml
+        │   │   ├── __init__.py
         │   │   ├── data_utils.py
+        │   │   ├── experiment_runner.py
         │   │   ├── logging_utils.py
         │   │   ├── metrics_utils.py
-        │   │   └── mlflow_utils.py
+        │   │   ├── mlflow_utils.py
+        │   │   └── persistence.py
         │   ├── models
         │   │   ├── __init__.py
         │   │   ├── predict_mlp.py
@@ -59,6 +69,6 @@
         │       └── helpers.py
         └── uv.lock
 
-16 directories, 38 files
+18 directories, 46 files
 ```
 <!-- TREE:END -->
