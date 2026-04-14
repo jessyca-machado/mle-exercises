@@ -1,7 +1,7 @@
 URL: str  = (
         "https://raw.githubusercontent.com/"
         "IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
-    )
+)
 
 RANDOM_STATE: int = 42
 
@@ -82,6 +82,35 @@ BOL_COLS: list[str] = [
 BIN_COLS: list[str] = [
         "MonthlyCharges_group",
         "TotalCharges_group",
+]
+
+TRUSTED = [
+        "src.data.feature_engineering.TelcoFeatureEngineeringBins",
+        "experiments.deep_learning.torch_mlp.TorchMLPClassifier",
+        "sklearn.feature_selection._univariate_selection.f_classif",
+        "sklearn._loss.link.Interval",
+        "sklearn._loss.link.LogitLink",
+        "sklearn._loss.loss.HalfBinomialLoss",
+]
+
+TRUSTED_SKORCH_TORCH = TRUSTED + [
+        "experiments.deep_learning.torch_mlp.TorchMLP",
+        "skorch.classifier.NeuralNetBinaryClassifier",
+        "skorch.history.History",
+        "skorch.dataset.Dataset",
+        "skorch.callbacks.logging.EpochTimer",
+        "skorch.callbacks.logging.PrintLog",
+        "skorch.callbacks.scoring.EpochScoring",
+        "skorch.callbacks.scoring.PassthroughScoring",
+        "torch.nn.modules.loss.BCEWithLogitsLoss",
+        "torch.optim.adam.Adam",
+        "torch.utils.data.dataloader.DataLoader",
+        "src.data.transformers.ToFloat32",
+        "functools.partial",
+        "skorch.setter.optimizer_setter",
+        "skorch.utils._indexing_other",
+        "skorch.utils.to_numpy",
+        "builtins.print",
 ]
 
 MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"
