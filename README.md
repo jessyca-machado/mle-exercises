@@ -21,13 +21,10 @@
         │   ├── baselines
         │   │   ├── __init__.py
         │   │   └── baseline_model.py
-        │   ├── deep_learning
-        │   │   ├── __init__.py
-        │   │   ├── torch_mlp.py
-        │   │   └── torch_mlp_process.py
-        │   └── model_selection
+        │   └── deep_learning
         │       ├── __init__.py
-        │       └── model_comparison.py
+        │       ├── torch_mlp.py
+        │       └── torch_mlp_process.py
         ├── ml_canvas.exercicios.py
         ├── notebooks
         │   └── eda.ipynb
@@ -57,6 +54,6 @@
         │       └── helpers.py
         └── uv.lock
 
-16 directories, 36 files
+15 directories, 34 files
 ```
 <!-- TREE:END -->
