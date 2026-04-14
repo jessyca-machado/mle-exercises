@@ -14,9 +14,9 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.utils.constants import YES_NO_COLS
+from src.ml.logging_utils import get_logger
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
     """
@@ -24,7 +24,7 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
 
     - Aprende os cortes (bin edges) no fit via quantis do TREINO
     - Aplica no transform via pd.cut (consistente no teste)
-    - Cria as mesmas features da sua função original
+    - Cria as mesmas features da função original
 
     Observações:
     - Garante que valores fora do range do treino caiam no bin 0 ou no último bin.
@@ -157,6 +157,8 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         df["StreamingTV_Flag"] = (df["StreamingTV"] == "Yes").astype(int)
 
         df["StreamingMovies_Flag"] = (df["StreamingMovies"] == "Yes").astype(int)
+
+
 
         return df
 
