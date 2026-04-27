@@ -7,23 +7,137 @@ Este módulo agora contém apenas:
 
 O wrapper sklearn manual (TorchMLPClassifier) foi removido porque o skorch já fornece
 integração sklearn (fit/predict/predict_proba), compatível com Pipeline e busca/tuning.
+
+Uso:
+    python experiments/deep_learning/torch_mlp.py
 """
 
 from __future__ import annotations
 
-from typing import Iterable, Optional, Tuple, Union
+from pathlib import Path
+import requests
+from mlflow.exceptions import MlflowException
+
+from typing import Iterable, Optional, Tuple, Union, Any
 
 import torch
 import torch.nn as nn
-from skorch import NeuralNetBinaryClassifier
+import pandas as pd
+
+import logging
+
+import mlflow
+import numpy as np
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
+from torch.utils.data import DataLoader, TensorDataset
+
+from src.utils.constants import (
+    MLFLOW_EXPERIMENT_NAME,
+    METRICS,
+    MLFLOW_TRACKING_URI,
+    MLP_GRID,
+    N_FOLDS,
+    PRIMARY_METRIC,
+    RANDOM_SEED,
+    FEATURES_COLS, YES_NO_COLS, TARGET_COL,
+    BOL_COLS, BIN_COLS, CAT_COLS, NUM_COLS
+)
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
+from sklearn.feature_selection import SelectKBest, f_classif
+from src.data.feature_engineering import TelcoFeatureEngineeringBins
+from sklearn.base import BaseEstimator
+
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.base import clone
+
+from mlflow.models.signature import ModelSignature
+
+import mlflow.pyfunc
+import skops.io as sio
+
+from mlflow.models import infer_signature
 
 
 HiddenDims = Union[str, Tuple[int, ...], Iterable[int]]
 
-class TorchMLP(nn.Module):
+logger = logging.getLogger(__name__)
+console = Console()
+
+
+def log_end_to_end_model(
+    feature_engineering: BaseEstimator,
+    preprocessor: Any,
+    selector: BaseEstimator,
+    model: torch.nn.Module,
+    input_dim: int,
+    input_example: pd.DataFrame,
+    signature: ModelSignature,   # <- aqui
+) -> None:
+    artifacts_dir = Path("mlflow_artifacts_tmp")
+    artifacts_dir.mkdir(exist_ok=True)
+
+    # 1) skops: feature engineering
+    fe_path = artifacts_dir / "feature_engineering.skops"
+    sio.dump(feature_engineering, fe_path)
+
+    # 2) skops: preprocessor
+    preproc_path = artifacts_dir / "preprocessor.skops"
+    sio.dump(preprocessor, preproc_path)
+
+    # 3) skops: selector
+    selector_path = artifacts_dir / "selector.skops"
+    sio.dump(selector, selector_path)
+
+    # 2) torchscript: modelo
+    model.eval()
+    device = next(model.parameters()).device
+    example = torch.randn(1, input_dim, device=device)
+    ts = torch.jit.trace(model, example).cpu()
+    ts_path = artifacts_dir / "model_ts.pt"
+    ts.save(str(ts_path))
+
+    # 3) pyfunc from code (sem cloudpickle)
+    code_path = Path("src/ml/churn_pyfunc.py").resolve()
+    mlflow.pyfunc.log_model(
+        name="model",
+        python_model=str(code_path),
+        artifacts={
+            "feature_engineering": str(fe_path.resolve()),
+            "preprocessor": str(preproc_path.resolve()),
+            "selector": str(selector_path.resolve()),
+            "torchscript_model": str(ts_path.resolve()),
+        },
+        pip_requirements="requirements-mlflow.txt",
+        input_example=input_example,  # pd.DataFrame
+        signature=signature,          # ModelSignature
+    )
+
+
+class MLP(nn.Module):
     """
     MLP simples para classificação binária:
-        - camadas densas + ReLU + Dropout (opcional)
+        - camadas densas + ReLU + Dropout
         - saída: 1 logit (sem sigmoid no forward)
     """
 
@@ -42,67 +156,602 @@ class TorchMLP(nn.Module):
         hidden_dims = tuple(hidden_dims)
 
         layers = []
-        prev = int(input_dim)
-        for h in hidden_dims:
-            layers.append(nn.Linear(prev, int(h)))
-            layers.append(nn.ReLU())
-            if dropout and dropout > 0:
-                layers.append(nn.Dropout(float(dropout)))
-            prev = int(h)
+        prev_dim = input_dim
 
-        layers.append(nn.Linear(prev, 1))
-        self.net = nn.Sequential(*layers)
+        for h in hidden_dims:
+            layers.extend([
+                nn.Linear(prev_dim, h),
+                nn.BatchNorm1d(h),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ])
+            prev_dim = h
+
+        layers.append(nn.Linear(prev_dim, 1))
+        self.network = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # retorna logits shape (N,)
-        return self.net(x).squeeze(1)
+        return self.network(x).squeeze(1)
 
 
-def build_skorch_mlp(
-    input_dim: int,
-    *,
-    hidden_dims: HiddenDims = (128, 64),
-    dropout: float = 0.2,
-    lr: float = 1e-3,
-    batch_size: int = 128,
-    max_epochs: int = 30,
-    weight_decay: float = 0.0,
-    device: Optional[str] = None,
-    train_split=None,
-    callbacks=None,
-    verbose: int = 0,
-):
+def _is_http_uri(uri: str) -> bool:
+    return uri.startswith("http://") or uri.startswith("https://")
+
+
+def setup_mlflow(tracking_uri: str, experiment_name: str, fallback_dir: str = "mlruns"):
     """
-    Factory para criar um estimador skorch (NeuralNetBinaryClassifier) pronto para entrar em Pipeline/CV/Optuna.
-
-    Parâmetros importantes:
-        - input_dim: número de features após o preprocessing (OHE/Scaler/FS etc.)
-        - train_split: default None (sem validação interna). Se você quiser EarlyStopping do skorch,
-        passe um ValidSplit(...) e callbacks=[EarlyStopping(...)].
-
-    Retorna:
-        - instancia de NeuralNetBinaryClassifier
+    Configura MLflow. Se o tracking server (HTTP) não estiver acessível,
+    faz fallback para backend local (file:./mlruns) para não quebrar o treino.
     """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # BCEWithLogitsLoss combina sigmoid + BCE de forma estável
-    net = NeuralNetBinaryClassifier(
-        module=TorchMLP,
-        module__input_dim=int(input_dim),
-        module__hidden_dims=tuple(hidden_dims),
-        module__dropout=float(dropout),
-        criterion=torch.nn.BCEWithLogitsLoss,
-        optimizer=torch.optim.Adam,
-        optimizer__weight_decay=float(weight_decay),
-        lr=float(lr),
-        batch_size=int(batch_size),
-        max_epochs=int(max_epochs),
-        iterator_train__shuffle=True,
-        train_split=train_split,   # None = sem validação interna
-        callbacks=callbacks,
-        device=device,
-        verbose=verbose,
+    # tenta usar o tracking_uri definido (provavelmente http://localhost:5001)
+    if _is_http_uri(tracking_uri):
+        try:
+            # checagem simples de conectividade (qualquer endpoint serve; / é ok)
+            requests.get(tracking_uri, timeout=1.5)
+            mlflow.set_tracking_uri(tracking_uri)
+        except Exception as e:
+            local_uri = f"file:{Path(fallback_dir).resolve()}"
+            logging.warning(
+                "Não consegui conectar no MLflow em %s (%s). "
+                "Fazendo fallback para %s",
+                tracking_uri, repr(e), local_uri
+            )
+            mlflow.set_tracking_uri(local_uri)
+    else:
+        # se já for file:/sqlite:/databricks etc, usa direto
+        mlflow.set_tracking_uri(tracking_uri)
+
+    # garante que o experimento existe (no backend atual)
+    try:
+        mlflow.set_experiment(experiment_name)
+    except MlflowException:
+        # em backends locais, às vezes a criação automática falha em alguns cenários;
+        # então criamos explicitamente e setamos.
+        exp_id = mlflow.create_experiment(experiment_name)
+        mlflow.set_experiment(experiment_name)
+        logging.info("Experimento criado: %s (id=%s)", experiment_name, exp_id)
+
+
+def compute_metrics(
+    y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray
+) -> dict[str, float]:
+    """Calcula todas as métricas de classificação."""
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1": f1_score(y_true, y_pred, zero_division=0),
+        "roc_auc": roc_auc_score(y_true, y_prob),
+        "average_precision": average_precision_score(y_true, y_prob),
+    }
+
+
+def set_seed(seed: int):
+    """Fixa seed para reproducibilidade."""
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    
+
+def get_cv_splits(
+    X: np.ndarray, y: np.ndarray, n_folds: int = N_FOLDS, seed: int = RANDOM_SEED
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Retorna splits de Stratified K-Fold CV."""
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    return list(skf.split(X, y))
+
+
+def train_one_fold(
+    model: MLP,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    params: dict,
+) -> tuple[MLP, list[float]]:
+    """Treina MLP em um fold com early stopping."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Datasets
+    train_ds = TensorDataset(
+        torch.FloatTensor(X_train).to(device),
+        torch.FloatTensor(y_train).to(device),
+    )
+    train_loader = DataLoader(train_ds, batch_size=params["batch_size"], shuffle=True)
+
+    X_val_t = torch.FloatTensor(X_val).to(device)
+    y_val_t = torch.FloatTensor(y_val).to(device)
+
+    # Peso para classe desbalanceada
+    n_neg = (y_train == 0).sum()
+    n_pos = max((y_train == 1).sum(), 1)
+    pos_weight = torch.tensor([n_neg / n_pos]).to(device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    optimizer = torch.optim.Adam(model.parameters(), lr=params["learning_rate"])
+
+    best_val_loss = float("inf")
+    patience_counter = 0
+    train_losses = []
+    best_state = None
+
+    for epoch in range(params["max_epochs"]):
+        # Treino
+        model.train()
+        epoch_loss = 0.0
+        for X_batch, y_batch in train_loader:
+            optimizer.zero_grad()
+            logits = model(X_batch)
+            loss = criterion(logits, y_batch)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+
+        train_losses.append(epoch_loss / len(train_loader))
+
+        # Validacao
+        model.eval()
+        with torch.no_grad():
+            val_logits = model(X_val_t)
+            val_loss = criterion(val_logits, y_val_t).item()
+
+        # Early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+        else:
+            patience_counter += 1
+            if patience_counter >= params["patience"]:
+                logger.debug("Early stopping na epoca %d", epoch + 1)
+                break
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return model, train_losses
+
+
+def predict_proba(model: MLP, X: np.ndarray) -> np.ndarray:
+    """Gera probabilidades de predicao."""
+    device = next(model.parameters()).device
+    model.eval()
+    with torch.no_grad():
+        logits = model(torch.FloatTensor(X).to(device))
+        probs = torch.sigmoid(logits).cpu().numpy()
+    return probs
+
+
+def build_preprocessor_from_df(df):
+    # pega só as colunas que realmente existem
+    cat = [c for c in CAT_COLS if c in df.columns]
+    num = [c for c in NUM_COLS if c in df.columns]
+    bol = [c for c in BOL_COLS if c in df.columns]
+    bin_cols = [c for c in BIN_COLS if c in df.columns]
+
+    # Se BIN_COLS forem grupos/categorias, encode nelas também:
+    scaled_cols = num + bin_cols
+
+    # evita duplicar coluna em dois grupos
+    cat = cat
+    num = [c for c in scaled_cols if c not in cat]
+    bol = [c for c in bol if c not in cat and c not in num]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat),
+            ("num", StandardScaler(), num),
+            ("bol", "passthrough", bol),
+        ],
+        remainder="drop",
+        verbose_feature_names_out=False,
+    )
+    return preprocessor
+
+
+def train_config_cv(params, run_name, X, y, splits, preprocessor_base):
+    """Trains one MLP config with K-Fold CV, logs to MLflow."""
+    fold_metrics = {m: [] for m in METRICS}
+    fold_oof = []  # lista de dicts por fold: y_true, y_proba, metrics
+
+    k_best = params.get("k_best", "all")
+
+    for fold_idx, (train_idx, test_idx) in enumerate(splits):
+        set_seed(RANDOM_SEED + fold_idx)
+
+        X_train_df = X.iloc[train_idx]
+        X_test_df = X.iloc[test_idx]
+        y_train = y.iloc[train_idx].to_numpy(dtype=np.float32)
+        y_test = y.iloc[test_idx].to_numpy(dtype=np.float32)
+
+        preprocessor_fold = clone(preprocessor_base)
+
+        prep_pipe = Pipeline(steps=[
+            ("feature_engineering", TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)),
+            ("preprocess", preprocessor_fold),
+            ("select_kbest", SelectKBest(score_func=f_classif, k=k_best)),
+        ])
+        X_train_sel = prep_pipe.fit_transform(X_train_df, y_train.astype(int)).astype(np.float32)
+        X_test_sel = prep_pipe.transform(X_test_df).astype(np.float32)
+
+        model = MLP(X_train_sel.shape[1], params["hidden_layers"], params["dropout"])
+        model, train_losses = train_one_fold(model, X_train_sel, y_train, X_test_sel, y_test, params)
+
+        y_prob = predict_proba(model, X_test_sel)
+        y_pred = (y_prob >= 0.5).astype(int)
+
+        metrics = compute_metrics(y_test.astype(int), y_pred, y_prob)
+        for m in METRICS:
+            fold_metrics[m].append(metrics[m])
+
+        fold_oof.append({
+            "fold": fold_idx,
+            "y_true": y_test.astype(int),
+            "y_proba": y_prob.astype(float),
+            "metrics": metrics,
+            "n_features_after": int(X_train_sel.shape[1]),
+        })
+
+    summary = {
+        "params": params,
+        "k_best": k_best,
+        "cv_mean": {m: float(np.mean(fold_metrics[m])) for m in METRICS},
+        "cv_std": {m: float(np.std(fold_metrics[m], ddof=1)) if len(fold_metrics[m]) > 1 else 0.0 for m in METRICS},
+        "fold_oof": fold_oof,
+    }
+    return summary
+
+
+def print_results_table(results: List[dict], title: str):
+    table = Table(title=f"\n[bold]{title}[/bold]")
+    table.add_column("Config", style="cyan")
+    table.add_column(f"cv_mean_{PRIMARY_METRIC}", justify="right")
+    table.add_column(f"cv_std_{PRIMARY_METRIC}", justify="right")
+    table.add_column("cv_mean_accuracy", justify="right")
+    table.add_column("cv_mean_precision", justify="right")
+    table.add_column("cv_mean_recall", justify="right")
+    table.add_column("cv_mean_roc_auc", justify="right")
+
+    best_idx = max(range(len(results)), key=lambda i: results[i]["cv_mean"][PRIMARY_METRIC])
+
+    for i, r in enumerate(results):
+        style = "bold green" if i == best_idx else ""
+        marker = " *" if i == best_idx else ""
+        table.add_row(
+            r["run_name"] + marker,
+            f"{r['cv_mean'][PRIMARY_METRIC]:.4f}",
+            f"{r['cv_std'][PRIMARY_METRIC]:.4f}",
+            f"{r['cv_mean']['accuracy']:.4f}",
+            f"{r['cv_mean']['precision']:.4f}",
+            f"{r['cv_mean']['recall']:.4f}",
+            f"{r['cv_mean']['roc_auc']:.4f}",
+            style=style,
+        )
+
+    console.print(table)
+    best = results[best_idx]
+    console.print(
+        f"\n[bold green]Melhor:[/bold green] {best['run_name']} "
+        f"({PRIMARY_METRIC}={best['cv_mean'][PRIMARY_METRIC]:.4f})"
     )
 
-    return net
+
+def make_prep_pipe(preprocessor_base, k_best, fe_kwargs=None) -> Pipeline:
+    fe_kwargs = fe_kwargs or dict(monthlycharges_q=5, totalcharges_q=10)
+    return Pipeline(steps=[
+        ("feature_engineering", TelcoFeatureEngineeringBins(**fe_kwargs)),
+        ("preprocess", clone(preprocessor_base)),
+        ("select_kbest", SelectKBest(score_func=f_classif, k=k_best)),
+    ])
+
+def fit_transform_fold(prep_pipe: Pipeline, X_train_df, y_train_int, X_test_df) -> tuple[np.ndarray, np.ndarray]:
+    X_train_sel = prep_pipe.fit_transform(X_train_df, y_train_int).astype(np.float32)
+    X_test_sel = prep_pipe.transform(X_test_df).astype(np.float32)
+    return X_train_sel, X_test_sel
+
+def fit_eval_mlp(best_params, X_train_sel, y_train_f, X_test_sel, y_test_f):
+    model = MLP(X_train_sel.shape[1], best_params["hidden_layers"], best_params["dropout"])
+    model, train_losses = train_one_fold(model, X_train_sel, y_train_f, X_test_sel, y_test_f, best_params)
+    y_prob = predict_proba(model, X_test_sel)
+    y_pred = (y_prob >= 0.5).astype(int)
+    metrics = compute_metrics(y_test_f.astype(int), y_pred, y_prob)
+    return model, train_losses, y_prob, metrics
+
+
+def run_cv_mlp(best_params, X_df, y, splits, preprocessor_base):
+    k_best = best_params.get("k_best", "all")
+    fold_scores = {m: [] for m in METRICS}
+    fold_oof = []
+
+    for fold_idx, (train_idx, test_idx) in enumerate(splits):
+        set_seed(RANDOM_SEED + fold_idx)
+
+        X_train_df, X_test_df = X_df.iloc[train_idx], X_df.iloc[test_idx]
+        y_train_f = y.iloc[train_idx].to_numpy(dtype=np.float32)
+        y_test_f = y.iloc[test_idx].to_numpy(dtype=np.float32)
+
+        prep_pipe = make_prep_pipe(preprocessor_base, k_best)
+        X_train_sel, X_test_sel = fit_transform_fold(prep_pipe, X_train_df, y_train_f.astype(int), X_test_df)
+
+        _, train_losses, y_prob, metrics = fit_eval_mlp(best_params, X_train_sel, y_train_f, X_test_sel, y_test_f)
+
+        for m in METRICS:
+            fold_scores[m].append(float(metrics[m]))
+
+        fold_oof.append({
+            "fold": fold_idx,
+            "y_true": y_test_f.astype(int),
+            "y_proba": y_prob.astype(float),
+            "metrics": metrics,
+            "n_epochs": len(train_losses),
+        })
+
+    cv_mean = {m: float(np.mean(fold_scores[m])) for m in METRICS}
+    cv_std = {m: float(np.std(fold_scores[m], ddof=1)) if len(fold_scores[m]) > 1 else 0.0 for m in METRICS}
+
+    return {"k_best": k_best, "cv_mean": cv_mean, "cv_std": cv_std, "fold_oof": fold_oof}
+
+
+def log_cv_oof_to_mlflow(cv_summary: dict, run_prefix: str = ""):
+    tmp_dir = Path("mlflow_artifacts_tmp"); tmp_dir.mkdir(exist_ok=True)
+
+    for m, v in cv_summary["cv_mean"].items():
+        mlflow.log_metric(f"{run_prefix}cv_mean_{m}", float(v))
+    for m, v in cv_summary["cv_std"].items():
+        mlflow.log_metric(f"{run_prefix}cv_std_{m}", float(v))
+
+    for item in cv_summary["fold_oof"]:
+        fold_idx = int(item["fold"])
+        for metric_name, value in item["metrics"].items():
+            mlflow.log_metric(metric_name, float(value), step=fold_idx)
+        mlflow.log_metric("n_epochs", float(item["n_epochs"]), step=fold_idx)
+
+        y_true_path = tmp_dir / f"y_true_fold_{fold_idx}.npy"
+        y_proba_path = tmp_dir / f"y_proba_fold_{fold_idx}.npy"
+        np.save(y_true_path, item["y_true"])
+        np.save(y_proba_path, item["y_proba"])
+        mlflow.log_artifact(str(y_true_path), artifact_path="oof")
+        mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
+
+
+def refit_final_mlp(best_params, X_df, y, preprocessor_base):
+    k_best = best_params.get("k_best", "all")
+    fe_kwargs = dict(monthlycharges_q=5, totalcharges_q=10)
+
+    fe_final = TelcoFeatureEngineeringBins(**fe_kwargs)
+    X_full_fe = fe_final.fit_transform(X_df)
+
+    preprocessor_final = clone(preprocessor_base)
+    X_full_pp = preprocessor_final.fit_transform(X_full_fe).astype(np.float32)
+
+    selector_final = SelectKBest(score_func=f_classif, k=k_best)
+    y_full = y.to_numpy(dtype=np.float32)
+    X_full = selector_final.fit_transform(X_full_pp, y_full.astype(int)).astype(np.float32)
+
+    # estimar best_epochs
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=RANDOM_SEED)
+    tr_idx, va_idx = next(sss.split(X_full, y_full.astype(int)))
+    X_tr, y_tr = X_full[tr_idx], y_full[tr_idx]
+    X_va, y_va = X_full[va_idx], y_full[va_idx]
+
+    set_seed(RANDOM_SEED)
+    model_tmp = MLP(X_full.shape[1], best_params["hidden_layers"], best_params["dropout"])
+    _, losses = train_one_fold(model_tmp, X_tr, y_tr, X_va, y_va, best_params)
+    best_epochs = len(losses)
+
+    # treinar final
+    params_full = {**best_params, "max_epochs": int(best_epochs), "patience": int(best_epochs) + 1}
+    set_seed(RANDOM_SEED)
+    model_final = MLP(X_full.shape[1], best_params["hidden_layers"], best_params["dropout"])
+    model_final, _ = train_one_fold(model_final, X_full, y_full, X_full, y_full, params_full)
+
+    return {
+        "fe": fe_final,
+        "preprocessor": preprocessor_final,
+        "selector": selector_final,
+        "model": model_final,
+        "input_dim": int(X_full.shape[1]),
+        "best_epochs": int(best_epochs),
+    }
+
+
+def log_best_mlp_run(best_params, X_df, y, splits, preprocessor_base):
+    k_best = best_params.get("k_best", "all")
+    mlflow.log_param("k_best", str(k_best))
+    mlflow.log_param("fe_monthlycharges_q", 5)
+    mlflow.log_param("fe_totalcharges_q", 10)
+
+    cv_summary = run_cv_mlp(best_params, X_df, y, splits, preprocessor_base)
+    log_cv_oof_to_mlflow(cv_summary)
+
+    final = refit_final_mlp(best_params, X_df, y, preprocessor_base)
+    mlflow.log_param("final_best_epochs", final["best_epochs"])
+    mlflow.log_param("final_input_dim", final["input_dim"])
+
+    input_example = X_df.head(50).copy()
+    int_cols = input_example.select_dtypes(include=["int", "int32", "int64"]).columns
+    if len(int_cols) > 0:
+        input_example[int_cols] = input_example[int_cols].astype("float64")
+
+    X_ex = final["selector"].transform(
+        final["preprocessor"].transform(final["fe"].transform(input_example)).astype(np.float32)
+    ).astype(np.float32)
+
+    output_example = predict_proba(final["model"], X_ex)
+    signature = infer_signature(input_example, output_example)
+
+    log_end_to_end_model(
+        feature_engineering=final["fe"],
+        preprocessor=final["preprocessor"],
+        selector=final["selector"],
+        model=final["model"],
+        input_dim=final["input_dim"],
+        input_example=input_example,
+        signature=signature,
+    )
+
+
+def log_config_run_to_mlflow(summary: dict, run_name: str) -> None:
+    """
+    summary = retorno de train_config_cv(...)
+    """
+    params = summary["params"]
+    mlflow.log_param("model_name", "mlp")
+    mlflow.log_param("config_name", run_name)
+    mlflow.log_param("search_type", "manual_grid_run_per_config")
+    mlflow.log_param("cv_folds", N_FOLDS)
+    mlflow.log_param("primary_metric", PRIMARY_METRIC)
+
+    # log params
+    for k, v in params.items():
+        mlflow.log_param(f"mlp_{k}", v)
+    mlflow.log_param("k_best", str(summary.get("k_best", "all")))
+
+    # métricas agregadas
+    for m, v in summary["cv_mean"].items():
+        mlflow.log_metric(f"cv_mean_{m}", float(v))
+    for m, v in summary["cv_std"].items():
+        mlflow.log_metric(f"cv_std_{m}", float(v))
+
+    # métricas por fold + oof artifacts (opcional, mas fica igual sklearn)
+    tmp_dir = Path("mlflow_artifacts_tmp")
+    tmp_dir.mkdir(exist_ok=True)
+    for fold_item in summary["fold_oof"]:
+        fold_idx = int(fold_item["fold"])
+        metrics = fold_item["metrics"]
+        for metric_name, value in metrics.items():
+            mlflow.log_metric(metric_name, float(value), step=fold_idx)
+
+        y_true_path = tmp_dir / f"{run_name}_y_true_fold_{fold_idx}.npy"
+        y_proba_path = tmp_dir / f"{run_name}_y_proba_fold_{fold_idx}.npy"
+        np.save(y_true_path, fold_item["y_true"])
+        np.save(y_proba_path, fold_item["y_proba"])
+        mlflow.log_artifact(str(y_true_path), artifact_path="oof")
+        mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
+    setup_mlflow(MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_NAME, fallback_dir="mlruns")
+
+    console.print("\n[bold]Carregando dataset...[/bold]")
+    df = load_data_churn()
+    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset")
+
+    y = df_clean[TARGET_COL].astype(int)
+    X_df = df_clean[FEATURES_COLS].copy()
+
+    # preprocessor_base (mesma lógica do sklearn) - inferir colunas após FE
+    fe_example = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
+    X_example_fe = fe_example.fit_transform(X_df.head(200).copy())
+    preprocessor_base = build_preprocessor_from_df(X_example_fe)
+
+    splits = get_cv_splits(X_df, y)
+
+    console.print(
+        f"[dim]Dataset: {X_df.shape[0]} amostras, {X_df.shape[1]} features | "
+        f"CV={N_FOLDS} folds | configs={len(MLP_GRID)}[/dim]\n"
+    )
+
+    console.rule("[bold cyan]MLP — 1 run por config (MLflow)[/bold cyan]")
+
+    tmp_dir = Path("mlflow_artifacts_tmp")
+    tmp_dir.mkdir(exist_ok=True)
+
+    results = []  # para tabela final + seleção do melhor
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Treinando configs do MLP", total=len(MLP_GRID))
+
+        for i, params in enumerate(MLP_GRID):
+            kb = params.get("k_best", "NA")
+            run_name = f"mlp_config_{i}_kbest_{kb}"
+            progress.update(task, description=f"[cyan]{run_name}")
+
+            # 1) roda CV e obtém sumário (sem MLflow aqui dentro)
+            summary = train_config_cv(params, run_name, X_df, y, splits, preprocessor_base)
+            results.append({"run_name": run_name, **summary})
+
+            # 2) loga 1 run por config
+            with mlflow.start_run(run_name=run_name) as run:
+                mlflow.log_param("model_name", "mlp")
+                mlflow.log_param("config_name", run_name)
+                mlflow.log_param("search_type", "manual_grid_run_per_config")
+                mlflow.log_param("cv_folds", N_FOLDS)
+                mlflow.log_param("primary_metric", PRIMARY_METRIC)
+
+                # params do modelo
+                mlflow.log_params({f"mlp_{k}": v for k, v in params.items()})
+                mlflow.log_param("k_best", str(summary.get("k_best", "all")))
+                mlflow.log_param("fe_monthlycharges_q", 5)
+                mlflow.log_param("fe_totalcharges_q", 10)
+
+                # métricas agregadas
+                for m in METRICS:
+                    mlflow.log_metric(f"cv_mean_{m}", float(summary["cv_mean"][m]))
+                    mlflow.log_metric(f"cv_std_{m}", float(summary["cv_std"][m]))
+
+                # métricas por fold + OOF artifacts (igual sklearn)
+                for fold_item in summary["fold_oof"]:
+                    fold_idx = int(fold_item["fold"])
+                    for metric_name, value in fold_item["metrics"].items():
+                        mlflow.log_metric(metric_name, float(value), step=fold_idx)
+
+                    y_true_path = tmp_dir / f"{run_name}_y_true_fold_{fold_idx}.npy"
+                    y_proba_path = tmp_dir / f"{run_name}_y_proba_fold_{fold_idx}.npy"
+                    np.save(y_true_path, fold_item["y_true"])
+                    np.save(y_proba_path, fold_item["y_proba"])
+                    mlflow.log_artifact(str(y_true_path), artifact_path="oof")
+                    mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
+
+            progress.update(task, advance=1)
+
+    # tabela final
+    print_results_table(results, title="MLP — Best CV Score")
+
+    # melhor config pelo PRIMARY_METRIC
+    best_idx = max(range(len(results)), key=lambda i: results[i]["cv_mean"][PRIMARY_METRIC])
+    best = results[best_idx]
+    console.print(f"\n[bold green]Melhor config:[/bold green] {best['run_name']}")
+
+    # salvar csv com todas configs
+    rows = []
+    for r in results:
+        row = {"run_name": r["run_name"]}
+        for k, v in r["params"].items():
+            row[f"mlp_{k}"] = v
+        for m in METRICS:
+            row[f"cv_mean_{m}"] = r["cv_mean"][m]
+            row[f"cv_std_{m}"] = r["cv_std"][m]
+        rows.append(row)
+
+    cv_df = pd.DataFrame(rows).sort_values(by=f"cv_mean_{PRIMARY_METRIC}", ascending=False)
+    cv_path = tmp_dir / "mlp_manual_search_cv_results.csv"
+    cv_df.to_csv(cv_path, index=False)
+
+    # (opcional, recomendado) run extra só para refit+log do modelo final
+    console.rule("[bold cyan]MLflow — refit final + log do modelo campeão[/bold cyan]")
+    with mlflow.start_run(run_name="mlp_best_refit_and_model") as run:
+        mlflow.log_param("model_name", "mlp")
+        mlflow.log_param("search_type", "manual_grid_best_refit")
+        mlflow.log_param("best_config_name", best["run_name"])
+        mlflow.log_params({f"mlp_{k}": v for k, v in best["params"].items()})
+        mlflow.log_artifact(str(cv_path), artifact_path="cv_results")
+
+        # aqui entra o seu pipeline completo de CV do melhor + refit + log pyfunc
+        log_best_mlp_run(best["params"], X_df, y, splits, preprocessor_base)
+
+    console.print("\n[bold green]Treino MLP concluído (1 run por config + modelo final)![/bold green]")
+    console.print(f"[dim]Resultados logados no MLflow: {MLFLOW_TRACKING_URI}[/dim]\n")
+
+
+if __name__ == "__main__":
+    main()

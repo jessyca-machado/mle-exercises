@@ -54,11 +54,12 @@ def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logge
     Returns:
         Logger configurado para incluir model_name
     """
-    logging.basicConfig(
-        level=level,
-        format="%(levelname)s [%(model_name)s] %(name)s: %(message)s",
-    )
     logger = logging.getLogger(name)
-    logger.addFilter(EnsureModelNameFilter())
+
+    # IMPORTANTE: adiciona filtro no root (pega tudo)
+    root = logging.getLogger()
+    has_filter = any(isinstance(f, EnsureModelNameFilter) for f in root.filters)
+    if not has_filter:
+        root.addFilter(EnsureModelNameFilter())
 
     return logger
