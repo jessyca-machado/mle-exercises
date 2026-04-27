@@ -9,6 +9,8 @@ mlartifacts/
 mlflow.db
 mlflow.db-journal
 *.db-journal
+mlflow_artifacts_tmp/
+catboost_info/
 
 *.db
 artifacts/

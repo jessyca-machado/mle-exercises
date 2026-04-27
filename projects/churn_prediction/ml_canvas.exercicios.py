@@ -95,8 +95,11 @@ def create_predition_churn_canvas() -> MLCanvas:
             "Aumento no churn de clientes em uma empresa de telecomunicações."
         ),
         ml_task="Classificação binária (churnou: 0/1)",
-        success_metrics_business=["ROI > 150% em 6 meses", "Redução de churn em 20%", "Aumento de receita em $500K/ano"],
-        success_metrics_technical=["F1 > 0.90"],
+        success_metrics_business=[
+            "ROI > 150% em 6 meses vs. 12 meses",
+            "Maximiazr valor líquido em $500K/ano"
+        ],
+        success_metrics_technical=["PR-AUC deve ser pelo menos +2% maior que o baseline"],
         data_sources=["Telco-Customer-Churn.csv (IBM)"],
         features=[
             "SeniorCitizen",

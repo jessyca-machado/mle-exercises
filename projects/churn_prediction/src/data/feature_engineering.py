@@ -144,21 +144,19 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
 
         df["MultipleLines_flag"] = (df["MultipleLines"] == "Yes").astype(int)
 
-        df["InternetService_Flag"] = (df["InternetService"] != "No").astype(int)
+        df["InternetService_flag"] = (df["InternetService"] != "No").astype(int)
 
-        df["OnlineSecurity_Flag"] = (df["OnlineSecurity"] == "Yes").astype(int)
+        df["OnlineSecurity_flag"] = (df["OnlineSecurity"] == "Yes").astype(int)
 
-        df["OnlineBackup_Flag"] = (df["OnlineBackup"] == "Yes").astype(int)
+        df["OnlineBackup_flag"] = (df["OnlineBackup"] == "Yes").astype(int)
 
-        df["DeviceProtection_Flag"] = (df["DeviceProtection"] == "Yes").astype(int)
+        df["DeviceProtection_flag"] = (df["DeviceProtection"] == "Yes").astype(int)
 
-        df["TechSupport_Flag"] = (df["TechSupport"] == "Yes").astype(int)
+        df["TechSupport_flag"] = (df["TechSupport"] == "Yes").astype(int)
 
-        df["StreamingTV_Flag"] = (df["StreamingTV"] == "Yes").astype(int)
+        df["StreamingTV_flag"] = (df["StreamingTV"] == "Yes").astype(int)
 
-        df["StreamingMovies_Flag"] = (df["StreamingMovies"] == "Yes").astype(int)
-
-
+        df["StreamingMovies_flag"] = (df["StreamingMovies"] == "Yes").astype(int)
 
         return df
 
