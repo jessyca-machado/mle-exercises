@@ -25,7 +25,9 @@
         │   │   ├── __init__.py
         │   │   └── torch_mlp.py
         │   └── selection
-        │       └── __init__.py
+        │       ├── __init__.py
+        │       ├── compare_models.py
+        │       └── cost_toolkit_metrics.py
         ├── ml_canvas.exercicios.py
         ├── notebooks
         │   └── eda.ipynb
@@ -48,16 +50,13 @@
         │   ├── ml
         │   │   ├── __init__.py
         │   │   ├── churn_pyfunc.py
+        │   │   ├── cost_utils.py
         │   │   ├── data_utils.py
         │   │   ├── experiment_runner.py
         │   │   ├── logging_utils.py
         │   │   ├── metrics_utils.py
         │   │   ├── mlflow_utils.py
         │   │   └── persistence.py
-        │   ├── models
-        │   │   ├── __init__.py
-        │   │   ├── predict_mlp.py
-        │   │   └── train_mlp.py
         │   ├── principal.py
         │   ├── tests.py
         │   └── utils
@@ -66,6 +65,6 @@
         │       └── helpers.py
         └── uv.lock
 
-17 directories, 44 files
+16 directories, 44 files
 ```
 <!-- TREE:END -->
