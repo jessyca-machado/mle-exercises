@@ -20,10 +20,10 @@
         │   ├── __init__.py
         │   ├── comparison
         │   │   ├── __init__.py
-        │   │   └── comparison_model.py
+        │   │   └── train_sklearn.py
         │   ├── deep_learning
         │   │   ├── __init__.py
-        │   │   └── torch_mlp.py
+        │   │   └── train_mlp_torch.py
         │   └── selection
         │       ├── __init__.py
         │       ├── compare_models.py
