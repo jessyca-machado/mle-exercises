@@ -1,7 +1,5 @@
-import os
 from pathlib import Path
 from typing import Dict, Union, List, Any
-import numpy as np
 from scipy.stats import randint, uniform, loguniform
 
 URL: str  = (
@@ -14,6 +12,12 @@ RANDOM_STATE: int = 42
 TEST_SIZE: int = 0.2
 
 TARGET_COL: str = "Churn"
+
+RANDOM_SEED: int = 42
+
+N_FOLDS: int = 10
+
+ALPHA: float = 0.05
 
 FEATURES_COLS: list[str] = [
         "SeniorCitizen",
@@ -35,19 +39,6 @@ FEATURES_COLS: list[str] = [
         "PaymentMethod",
         "MonthlyCharges",
         "TotalCharges",
-        # "ltv"
-        # "MonthlyCharges_group",
-        # "TotalCharges_group",
-        # "onePlusYearCustomer",
-        # "MonthlyCharges_squared",
-        # "MultipleLines_flag",
-        # "InternetService_flag",
-        # "OnlineSecurity_flag",
-        # "OnlineBackup_flag",
-        # "DeviceProtection_flag",
-        # "TechSupport_flag",
-        # "StreamingTV_flag",
-        # "StreamingMovies_flag"
 ]
 
 YES_NO_COLS: list[str] = [
@@ -118,6 +109,14 @@ MLFLOW_EXPERIMENT_NAME: str = "churn-model-comparison"
 
 MLFLOW_ARTIFACT_ROOT: str = "./mlartifacts"
 
+PROJECT_ROOT = Path(__file__).parent.parent
+
+DATA_DIR = PROJECT_ROOT / "data"
+
+METRICS = ["accuracy", "precision", "recall", "f1", "roc_auc", "average_precision"]
+
+PRIMARY_METRIC = "recall"
+
 MLP_GRID = [
         {
                 "hidden_layers": [64, 32],
@@ -174,16 +173,6 @@ MLP_GRID = [
                 "k_best": 'all',
         },
 ]
-
-# Paths
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-
-RANDOM_SEED = 42
-N_FOLDS = 10
-
-METRICS = ["accuracy", "precision", "recall", "f1", "roc_auc", "average_precision"]
-PRIMARY_METRIC = "recall"
 
 GridSpec = Union[Dict[str, Any], List[Dict[str, Any]]]
 

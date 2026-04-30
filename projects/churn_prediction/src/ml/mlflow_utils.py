@@ -19,12 +19,10 @@ def setup_mlflow(default_experiment: str) -> None:
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
 
-    # Opcional/recomendado: garantir que o diretório exista quando você usa artifact root relativo
     artifact_root = os.getenv("MLFLOW_ARTIFACT_ROOT", "./mlartifacts")
     try:
         Path(artifact_root).mkdir(parents=True, exist_ok=True)
     except Exception:
-        # não quebra execução se não conseguir criar
         pass
 
 
@@ -47,9 +45,9 @@ def _safe_log_params(logger, params: Dict[str, Any]) -> None:
 def _safe_log_metrics(logger, metrics: Dict[str, Any]) -> None:
     """
     Loga métricas garantindo:
-    - conversão para float
-    - não logar NaN/Inf (MLflow frequentemente rejeita ou fica inconsistente)
-    - não engolir silenciosamente erros (marca tag no run)
+        - conversão para float
+        - não logar NaN/Inf (MLflow frequentemente rejeita ou fica inconsistente)
+        - não engolir silenciosamente erros (marca tag no run)
     """
     logger.debug("Logging metrics no MLflow (%d keys)", len(metrics or {}))
     for k, v in (metrics or {}).items():
