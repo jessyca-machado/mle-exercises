@@ -1,16 +1,15 @@
-"""
-Grid search de múltiplos modelos sklearn com Pipeline (preprocess + model),
-K-Fold CV via RandomizedSearchCV e logging no MLflow.
+"""train_sklearn.py — Treino de múltiplos modelos sklearn com Pipeline utilizando RandomizedSearchCV
+e logging no MLflow.
 
-Inclui run_grid_search com barra de progresso (Rich) por modelo.
+Inclui run_randomized_search com barra de progresso por modelo.
 
 Uso:
-    python experiments/comparison/comparison_model.py
+    python experiments/comparison/train_sklearn.py
 """
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import mlflow
 import numpy as np
@@ -20,26 +19,16 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 from rich.table import Table
 
-from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_predict, RepeatedStratifiedKFold, RandomizedSearchCV
-from sklearn.metrics import (
-    accuracy_score,
-    average_precision_score,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,  
-)
+from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
 from sklearn.base import clone
 from sklearn.feature_selection import SelectKBest, f_classif
-
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
+
 from xgboost import XGBClassifier
 
 from src.utils.constants import (
@@ -52,55 +41,29 @@ from src.utils.constants import (
     YES_NO_COLS,
     RANDOM_STATE,
     FEATURES_COLS,
-    CAT_COLS,
-    NUM_COLS,
-    BOL_COLS,
-    BIN_COLS,
-    # GRID_PARAM_GRIDS,
     PARAM_DISTS,
     N_ITER_BY_MODEL,
 )
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
+from src.ml.data_utils import compute_metrics, build_preprocessor_from_df
 
 
 logger = logging.getLogger(__name__)
 console = Console()
 
-def build_preprocessor_from_df(df: pd.DataFrame) -> ColumnTransformer:
-    cat = [c for c in CAT_COLS if c in df.columns]
-    num = [c for c in NUM_COLS if c in df.columns]
-    bol = [c for c in BOL_COLS if c in df.columns]
-    bin_cols = [c for c in BIN_COLS if c in df.columns]
-
-    scaled_cols = num + bin_cols
-    num = [c for c in scaled_cols if c not in cat]
-    bol = [c for c in bol if c not in cat and c not in num]
-
-    return ColumnTransformer(
-        transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat),
-            ("num", StandardScaler(), num),
-            ("bol", "passthrough", bol),
-        ],
-        remainder="drop",
-        verbose_feature_names_out=False,
-    )
-
-
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray) -> dict[str, float]:
-    return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision": precision_score(y_true, y_pred, zero_division=0),
-        "recall": recall_score(y_true, y_pred, zero_division=0),
-        "f1": f1_score(y_true, y_pred, zero_division=0),
-        "roc_auc": roc_auc_score(y_true, y_prob),
-        "average_precision": average_precision_score(y_true, y_prob),
-    }
-
-
 def scoring_from_primary_metric(primary: str) -> str:
+    """
+    Mapeia a métrica principal do projeto para a string de `scoring`
+    esperada pelo scikit-learn.
+
+    Args:
+        primary: Nome da métrica principal.
+
+    Returns:
+        String de scoring compatível com scikit-learn.
+    """
     mapping = {
         "roc_auc": "roc_auc",
         "average_precision": "average_precision",
@@ -114,7 +77,14 @@ def scoring_from_primary_metric(primary: str) -> str:
     return mapping[primary]
 
 
-def get_models():
+def get_models() -> Dict[str, Any]:
+    """
+    Retorna um dicionário de estimadores scikit-learn (e XGBoost) a serem avaliados.
+
+    Returns:
+        Dicionário {nome_modelo: estimador}, onde cada estimador está configurado com
+        seeds/parâmetros básicos para reprodutibilidade.
+    """
     return {
         "DecisionTree": DecisionTreeClassifier(random_state=RANDOM_STATE),
         "RandomForest": RandomForestClassifier(random_state=RANDOM_STATE),
@@ -128,6 +98,13 @@ def get_models():
 
 
 def log_skops_pipeline(pipeline: Pipeline, artifact_path: str = "artifacts") -> None:
+    """
+    Serializa um pipeline scikit-learn para arquivo `.skops` e faz upload como artifact no MLflow.
+
+    Args:
+        pipeline: Pipeline scikit-learn já treinado.
+        artifact_path: Caminho de artifacts no MLflow onde o arquivo será salvo.
+    """
     tmp_dir = Path("mlflow_artifacts_tmp")
     tmp_dir.mkdir(exist_ok=True)
     p = tmp_dir / "pipeline.skops"
@@ -135,7 +112,19 @@ def log_skops_pipeline(pipeline: Pipeline, artifact_path: str = "artifacts") -> 
     mlflow.log_artifact(str(p), artifact_path=artifact_path)
 
 
-def print_results_table(results: List[dict], title: str):
+def print_results_table(results: List[dict], title: str) -> None:
+    """
+    Imprime uma tabela com o resumo de resultados por modelo:
+    - melhor score de CV
+    - melhores hiperparâmetros
+
+    Args:
+        results: Lista de dicionários com chaves como:
+            - "model_name"
+            - "best_cv_score"
+            - "best_params"
+        title: Título da tabela.
+    """
     if not results:
         console.print("[bold red]Nenhum resultado para exibir.[/bold red]")
         return
@@ -164,22 +153,27 @@ def print_results_table(results: List[dict], title: str):
     )
 
 
-def _merge_kbest_into_param_dist(param_dist):
+def _merge_kbest_into_param_dist(param_dist: Any) -> Any:
     """
-    Garante que select_kbest__k vindo do PARAM_DISTS seja aplicado.
-    - Se já existir no param_dist, não sobrescreve.
-    - Se param_dist for list[dict], adiciona em cada dict.
+    Garante que `select_kbest__k` esteja presente no espaço de busca (`param_dist`)
+    para que o RandomizedSearchCV possa testar diferentes valores de K.
+
+    Args:
+        param_dist: Estrutura de parâmetros no formato aceito pelo scikit-learn:
+            - dict[str, Any] ou
+            - list[dict[str, Any]]
+
+    Returns:
+        `param_dist` com `select_kbest__k` garantido quando aplicável.
     """
     kbest_key = "select_kbest__k"
 
-    # se o user já colocou no param_dist, não mexe
     def _has_kbest(d: dict) -> bool:
         return kbest_key in d
 
     if isinstance(param_dist, list):
         if any(_has_kbest(d) for d in param_dist):
             return param_dist
-        # fallback: se você quiser sempre forçar, troque aqui
         return [{**d, kbest_key: [15, "all"]} for d in param_dist]
 
     if isinstance(param_dist, dict):
@@ -188,11 +182,33 @@ def _merge_kbest_into_param_dist(param_dist):
         return {**param_dist, kbest_key: [15, "all"]}
 
     return param_dist
-    
 
-def run_randomsearch_for_model(model_name: str, estimator, X_df: pd.DataFrame, y: pd.Series) -> dict:
+
+def run_randomsearch_for_model(
+    model_name: str,
+    estimator: Any,
+    X_df: pd.DataFrame,
+    y: pd.Series,
+) -> dict:
+    """
+    Executa RandomizedSearchCV para um modelo específico, com Pipeline completo.
+    Faz logging de parâmetros e artefatos no MLflow.
+
+    Args:
+        model_name: Nome do modelo (chave no dicionário de modelos).
+        estimator: Estimador scikit-learn ou XGBClassifier a ser inserido no pipeline.
+        X_df: DataFrame com features.
+        y: Série com o target.
+
+    Returns:
+        Dicionário com:
+            - model_name
+            - run_id
+            - best_cv_score
+            - best_params
+    """
     fe_example = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
-    X_example_fe = fe_example.fit_transform(X_df.head(200).copy())  # só para inferir colunas
+    X_example_fe = fe_example.fit_transform(X_df.head(200).copy())
     preprocessor = build_preprocessor_from_df(X_example_fe)
 
     pipe = Pipeline(
@@ -208,7 +224,6 @@ def run_randomsearch_for_model(model_name: str, estimator, X_df: pd.DataFrame, y
     param_dist = _merge_kbest_into_param_dist(param_dist)
 
     n_iter = N_ITER_BY_MODEL.get(model_name, 50)
-
     cv = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_SEED)
     scoring = scoring_from_primary_metric(PRIMARY_METRIC)
 
@@ -239,17 +254,16 @@ def run_randomsearch_for_model(model_name: str, estimator, X_df: pd.DataFrame, y
         mlflow.log_metric("best_cv_score", float(rs.best_score_))
         mlflow.log_params(rs.best_params_)
 
-        # log quantidades de features para o melhor pipeline
-        best_pipe = rs.best_estimator_
-        # número de features após preprocess (antes do SelectKBest)
+        best_pipe: Pipeline = rs.best_estimator_
+
         n_before = int(best_pipe.named_steps["preprocess"].get_feature_names_out().shape[0])
         k_best = best_pipe.named_steps["select_kbest"].k
         n_after = n_before if k_best == "all" else int(k_best)
+
         mlflow.log_param("best_kbest", str(k_best))
         mlflow.log_param("n_features_before_kbest", n_before)
         mlflow.log_param("n_features_after_kbest", n_after)
 
-        # métricas por fold + OOF artifacts (para seleção estatística e business toolkit)
         log_best_estimator_fold_metrics(best_pipe, X_df, y)
 
         cv_df = pd.DataFrame(rs.cv_results_)
@@ -269,8 +283,18 @@ def run_randomsearch_for_model(model_name: str, estimator, X_df: pd.DataFrame, y
         }
 
 
-def run_grid_search(models: Dict[str, Any], X_df: pd.DataFrame, y: pd.Series) -> List[dict]:
-    """Executa RandomizedSearchCV para todos os modelos com barra de progresso (por modelo)."""
+def run_random_search(models: Dict[str, Any], X_df: pd.DataFrame, y: pd.Series) -> List[dict]:
+    """
+    Executa RandomizedSearchCV para todos os modelos fornecidos por modelo.
+
+    Args:
+        models: Dicionário {model_name: estimator}.
+        X_df: DataFrame com features.
+        y: Série com o target.
+
+    Returns:
+        Lista de resultados por modelo.
+    """
     results: List[dict] = []
 
     with Progress(
@@ -282,6 +306,7 @@ def run_grid_search(models: Dict[str, Any], X_df: pd.DataFrame, y: pd.Series) ->
         console=console,
     ) as progress:
         task = progress.add_task("[cyan]RandomizedSearchCV por modelo", total=len(models))
+
         for model_name, estimator in models.items():
             progress.update(task, description=f"[cyan]{model_name}")
             console.rule(f"[bold cyan]{model_name}[/bold cyan]")
@@ -294,18 +319,17 @@ def run_grid_search(models: Dict[str, Any], X_df: pd.DataFrame, y: pd.Series) ->
 
 def log_best_estimator_fold_metrics(best_estimator: Pipeline, X_df: pd.DataFrame, y: pd.Series) -> None:
     """
-    Gera predições out-of-fold (OOF) com o best_estimator e loga métricas por fold no MLflow,
-    usando o MESMO esquema de folds do treino (StratifiedKFold com RANDOM_SEED).
-    
-    Importante: isso não é "o mesmo" que os scores internos do RandomizedSearchCV,
-    mas é consistente e comparável entre modelos para teste estatístico.
+    Gera predições out-of-fold (OOF) com o `best_estimator` e loga métricas por fold no MLflow.
+
+    Args:
+        best_estimator: Pipeline treinável (pipeline completo), que será clonado e treinado fold a fold.
+        X_df: DataFrame com features.
+        y: Série com target.
     """
     cv = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_SEED)
-
     tmp_dir = Path("mlflow_artifacts_tmp")
     tmp_dir.mkdir(exist_ok=True)
 
-    # Para ter métricas por fold, fazemos loop manual nos splits
     for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_df, y)):
         X_tr, X_te = X_df.iloc[train_idx], X_df.iloc[test_idx]
         y_tr = y.iloc[train_idx].to_numpy().astype(int)
@@ -315,6 +339,7 @@ def log_best_estimator_fold_metrics(best_estimator: Pipeline, X_df: pd.DataFrame
         est.fit(X_tr, y_tr)
 
         y_pred = est.predict(X_te)
+
         if hasattr(est, "predict_proba"):
             y_prob = est.predict_proba(X_te)[:, 1]
         else:
@@ -351,7 +376,7 @@ def main():
     )
 
     models = get_models()
-    results = run_grid_search(models, X_df, y)
+    results = run_random_search(models, X_df, y)
 
     print_results_table(results, title="Model Comparison — Best CV Score")
 
