@@ -698,6 +698,7 @@ def main():
                 for m in METRICS:
                     mlflow.log_metric(f"cv_mean_{m}", float(summary["cv_mean"][m]))
                     mlflow.log_metric(f"cv_std_{m}", float(summary["cv_std"][m]))
+                    mlflow.log_metric("best_cv_score", summary["cv_mean"]["recall"])
 
                 # métricas por fold + OOF artifacts (igual sklearn)
                 for fold_item in summary["fold_oof"]:

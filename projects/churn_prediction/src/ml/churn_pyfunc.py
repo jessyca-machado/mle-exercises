@@ -6,7 +6,7 @@ import mlflow.pyfunc
 import skops.io as sio
 from typing import Any
 import pandas as pd
-    
+from src.utils.constants import TRUSTED_TYPES    
 
 class ChurnModel(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
@@ -14,20 +14,6 @@ class ChurnModel(mlflow.pyfunc.PythonModel):
         preproc_path = context.artifacts["preprocessor"]
         selector_path = context.artifacts["selector"]
         model_path = context.artifacts["torchscript_model"]
-
-        # DICA: rode uma vez com print(sio.get_untrusted_types(preproc_path))
-        # e fixe exatamente a lista retornada aqui.
-        TRUSTED_TYPES = [
-            # Feature Engineering custom
-            "src.data.feature_engineering.TelcoFeatureEngineeringBins",
-            # sklearn base
-            "sklearn.compose._column_transformer.ColumnTransformer",
-            "sklearn.preprocessing._encoders.OneHotEncoder",
-            "sklearn.preprocessing._data.StandardScaler",
-            # feature selection
-            "sklearn.feature_selection._univariate_selection.SelectKBest",
-            "sklearn.feature_selection._univariate_selection.f_classif",
-        ]
 
         self.feature_engineering = sio.load(fe_path, trusted=TRUSTED_TYPES)
         self.preprocessor = sio.load(preproc_path, trusted=TRUSTED_TYPES)
@@ -63,4 +49,3 @@ class ChurnModel(mlflow.pyfunc.PythonModel):
 
 
 mlflow.models.set_model(ChurnModel())
-
