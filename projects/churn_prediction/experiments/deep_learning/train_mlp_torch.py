@@ -2,6 +2,9 @@
 
 Uso:
     python experiments/deep_learning/train_mlp_torch.py
+
+Para visualizar:
+    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
 from __future__ import annotations
 
@@ -781,52 +784,6 @@ def log_best_mlp_run(
         input_example=input_example,
         signature=signature,
     )
-
-
-def log_config_run_to_mlflow(summary: dict[str, Any], run_name: str) -> None:
-    """
-    Loga no MLflow os resultados de uma configuração do MLP (um run por configuração).
-
-    São logados:
-    - parâmetros do modelo/treino
-    - métricas agregadas (cv_mean_*, cv_std_*)
-    - métricas por fold (step=fold_idx)
-    - artifacts OOF por fold em `oof/`
-
-    Args:
-        summary: Resumo retornado por `train_config_cv`.
-        run_name: Nome do run/configuração, utilizado para identificar o run no MLflow.
-    """
-    params = summary["params"]
-    mlflow.log_param("model_name", "mlp")
-    mlflow.log_param("config_name", run_name)
-    mlflow.log_param("search_type", "manual_grid_run_per_config")
-    mlflow.log_param("cv_folds", N_FOLDS)
-    mlflow.log_param("primary_metric", PRIMARY_METRIC)
-
-    for k, v in params.items():
-        mlflow.log_param(f"mlp_{k}", v)
-    mlflow.log_param("k_best", str(summary.get("k_best", "all")))
-
-    for m, v in summary["cv_mean"].items():
-        mlflow.log_metric(f"cv_mean_{m}", float(v))
-    for m, v in summary["cv_std"].items():
-        mlflow.log_metric(f"cv_std_{m}", float(v))
-
-    tmp_dir = Path("mlflow_artifacts_tmp")
-    tmp_dir.mkdir(exist_ok=True)
-    for fold_item in summary["fold_oof"]:
-        fold_idx = int(fold_item["fold"])
-        metrics = fold_item["metrics"]
-        for metric_name, value in metrics.items():
-            mlflow.log_metric(metric_name, float(value), step=fold_idx)
-
-        y_true_path = tmp_dir / f"{run_name}_y_true_fold_{fold_idx}.npy"
-        y_proba_path = tmp_dir / f"{run_name}_y_proba_fold_{fold_idx}.npy"
-        np.save(y_true_path, fold_item["y_true"])
-        np.save(y_proba_path, fold_item["y_proba"])
-        mlflow.log_artifact(str(y_true_path), artifact_path="oof")
-        mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
 
 
 def main():

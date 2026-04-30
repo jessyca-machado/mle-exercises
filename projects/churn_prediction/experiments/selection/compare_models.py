@@ -9,6 +9,9 @@ Uso:
     --metric business.sweep_foldwise.net_value \
     --gate-best-cv-score 0.8 \
     --gate-metric-name best_cv_score
+
+Para visualizar:
+    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
 import argparse
 import logging

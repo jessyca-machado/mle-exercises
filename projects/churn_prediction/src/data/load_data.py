@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.utils.constants import URL, RANDOM_STATE
+from src.utils.constants import URL, RANDOM_SEED
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def load_data_churn() -> pd.DataFrame:
     """
 
     url = URL
-    random_state = RANDOM_STATE
+    random_state = RANDOM_SEED
 
     try:
         df = pd.read_csv(url)

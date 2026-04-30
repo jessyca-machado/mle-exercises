@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 
 from src.data.load_data import load_data_churn
-from src.utils.constants import FEATURES_COLS, YES_NO_COLS
+from src.utils.constants import YES_NO_COLS
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)

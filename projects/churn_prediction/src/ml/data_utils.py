@@ -21,7 +21,7 @@ from src.utils.constants import (
     YES_NO_COLS,
     TARGET_COL,
     TEST_SIZE,
-    RANDOM_STATE,
+    RANDOM_SEED,
     BOL_COLS,
     BIN_COLS,
     CAT_COLS,
@@ -46,7 +46,7 @@ def load_and_split_churn() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Se
         X,
         y,
         test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
+        random_state=RANDOM_SEED,
         stratify=y if y.nunique() == 2 else None,
     )
 
