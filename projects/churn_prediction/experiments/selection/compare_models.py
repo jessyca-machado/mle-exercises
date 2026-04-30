@@ -1,4 +1,5 @@
-"""
+"""Comparação estatística entre modelos utilizando testes de hipótese.
+
 Uso:
     # comparação normal, utilizando como baleline a regressão logística:
     python experiments/selection/compare_models.py
@@ -23,154 +24,46 @@ from rich.panel import Panel
 from rich.table import Table
 from scipy import stats
 
+from typing import Any, Mapping
+from mlflow.tracking import MlflowClient
+from mlflow.entities import Run
+from mlflow.entities.model_registry import ModelVersion
+
 from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
     PRIMARY_METRIC,
+    ALPHA,
+)
+from src.ml.mlflow_selection_utils import (
+    get_latest_runs_with_mlp_from_refit,
+    run_display_name,
 )
 
 logger = logging.getLogger(__name__)
 console = Console()
-ALPHA = 0.05
 
-
-# -----------------------------
-# MLflow helpers
-# -----------------------------
-def is_cv_run(run) -> bool:
-    p = run.data.params
-    return (p.get("cv_folds") == str(N_FOLDS) or p.get("n_folds") == str(N_FOLDS))
-
-def is_mlp_refit_run(run) -> bool:
-    p = run.data.params
-    return p.get("model_name") == "mlp" and ("best_config_name" in p)
-
-def get_latest_mlp_refit_run(client) -> object | None:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    # filtro por params no MLflow search_runs é meio chato (params.*),
-    # então fazemos busca ampla e filtramos em Python.
-    runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-    for r in runs:
-        if is_mlp_refit_run(r):
-            return r
-    return None
-
-def find_cv_run_by_config_name(client, config_name: str) -> object | None:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-
-    for r in runs:
-        p = r.data.params
-        # 1) melhor: param explícito
-        if p.get("config_name") == config_name and is_cv_run(r):
-            return r
-        # 2) fallback: runName
-        if r.data.tags.get("mlflow.runName") == config_name and is_cv_run(r):
-            return r
-    return None
-
-
-def get_latest_runs_with_mlp_from_refit(client: mlflow.tracking.MlflowClient) -> list:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    all_runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-
-    chosen = {}
-
-    # 1) primeiro pega o MLP via refit -> best_config_name -> run de CV dessa config
-    mlp_refit = get_latest_mlp_refit_run(client)
-    if mlp_refit is not None:
-        best_config_name = mlp_refit.data.params.get("best_config_name")
-        if best_config_name:
-            mlp_cv_run = find_cv_run_by_config_name(client, best_config_name)
-            if mlp_cv_run is not None:
-                chosen["mlp"] = mlp_cv_run
-            else:
-                console.print(
-                    f"[yellow]Aviso:[/yellow] não achei run de CV para best_config_name='{best_config_name}'. "
-                    "Vou cair no fallback do último CV do mlp."
-                )
-
-    # 2) para os demais modelos (e fallback do mlp se necessário): último run CV por model_name
-    for r in all_runs:
-        p = r.data.params
-        model_name = p.get("model_name")
-        if not model_name:
-            continue
-        if not is_cv_run(r):
-            continue
-        if model_name not in chosen:
-            chosen[model_name] = r
-
-    return list(chosen.values())
-
-
-
-def run_group_key(run) -> str:
-    p = run.data.params
-    return (
-        p.get("model_name")
-        or p.get("config_name")
-        or run.data.tags.get("mlflow.runName")
-        or run.info.run_id
-    )
-
-def get_latest_runs_per_group(client: mlflow.tracking.MlflowClient) -> List:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    # Busca bastante coisa; você pode adicionar filter_string se tiver padrões
-    runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-
-    latest_by_key = {}
-    for r in runs:
-        p = r.data.params
-
-        # mantém o filtro que você já tinha (só runs "de modelo" e do mesmo cv)
-        is_model = (p.get("model_name") or p.get("config_name"))
-        same_cv = (p.get("cv_folds") == str(N_FOLDS) or p.get("n_folds") == str(N_FOLDS))
-        if not (is_model and same_cv):
-            continue
-
-        key = run_group_key(r)
-
-        # como runs já vêm em ordem start_time DESC, o primeiro que aparecer é o mais recente
-        if key not in latest_by_key:
-            latest_by_key[key] = r
-
-    return list(latest_by_key.values())
-
-
-def run_display_name(run) -> str:
-    return run.data.params.get("model_name") or run.info.run_id
 
 def load_fold_metric(client, run_id: str, metric: str) -> np.ndarray:
+    """
+    Carrega uma métrica logada por fold, utilizando o histórico de métricas do MLflow
+    e retorna como um vetor de tamanho fixo, alinhado aos folds da validação cruzada.
+
+    - busca o histórico da métrica `metric` para o `run_id`
+    - mantem apenas pontos com steps em [0, N_FOLDS-1]
+    - remove duplicadas por step e mantem o último valor por step após ordenar
+    - retorna um array vazio se o run não estiver exatamente N_FOLDS steps
+
+    Args:
+        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar o histórico de métricas.
+        run_id: ID do run no MLflow de onde será lido o histórico da métrica.
+        metric: Nome da métrica a ser carregada.
+
+    Returns:
+        Um array NumPy com shape (N_FOLDS,) contendo o valor da métrica para cada fold,
+        ordenado por step. Se a métrica for ausente ou incompleta, retorna um array vazio.
+    """
     hist = sorted(client.get_metric_history(run_id, metric), key=lambda m: (m.step, m.timestamp))
     by_step = {}
     for m in hist:
@@ -180,53 +73,29 @@ def load_fold_metric(client, run_id: str, metric: str) -> np.ndarray:
             by_step[m.step] = m.value
     if len(by_step) != N_FOLDS:
         return np.array([], dtype=float)
-    return np.array([by_step[i] for i in range(N_FOLDS)], dtype=float)
+
+    shape_metric_fold = np.array([by_step[i] for i in range(N_FOLDS)], dtype=float)
+
+    return shape_metric_fold
 
 
-# -----------------------------
-# Estatística: 2 modelos
-# -----------------------------
-def paired_test(scores_a: np.ndarray, scores_b: np.ndarray) -> Dict:
-    diff = scores_a - scores_b
-    _, p_sw = stats.shapiro(diff) if len(diff) >= 3 else (np.nan, 1.0)
-    is_normal = (p_sw >= ALPHA) if not np.isnan(p_sw) else False
+def print_nemenyi_matrix(
+        pvals,
+        names: List[str],
+        alpha: float = ALPHA
+) -> None:
+    """
+    Imprime de forma legível uma matriz de p-valores pareados do teste post-hoc de Nemenyi,
+    utilizando uma tabela do Rich.
 
-    if is_normal:
-        stat, p_val = stats.ttest_rel(scores_a, scores_b)
-        test_name = "Paired t-test"
-    else:
-        if np.allclose(diff, 0):
-            stat, p_val = 0.0, 1.0
-        else:
-            stat, p_val = stats.wilcoxon(scores_a, scores_b)
-        test_name = "Wilcoxon"
+    Células com p-valores abaixo de `alpha` são destacadas para indicar diferenças estatisticamente
+    significativas.
 
-    std_diff = np.std(diff, ddof=1) if len(diff) > 1 else 0.0
-    d = float(np.mean(diff) / std_diff) if std_diff > 0 else 0.0
-
-    se = stats.sem(diff) if len(diff) > 1 else 0.0
-    if len(diff) > 1 and se > 0:
-        ci = stats.t.interval(0.95, df=len(diff) - 1, loc=np.mean(diff), scale=se)
-        ci = (float(ci[0]), float(ci[1]))
-    else:
-        ci = (float(np.mean(diff)), float(np.mean(diff)))
-
-    return {
-        "test": test_name,
-        "p_value": float(p_val),
-        "stat": float(stat),
-        "shapiro_p": float(p_sw) if not np.isnan(p_sw) else None,
-        "mean_diff": float(np.mean(diff)),
-        "cohens_d": float(d),
-        "ci95": ci,
-        "significant": bool(p_val < ALPHA),
-    }
-
-
-# -----------------------------
-# Estatística: 3+ modelos
-# -----------------------------
-def print_nemenyi_matrix(pvals, names: List[str], alpha: float = ALPHA) -> None:
+    Args:
+        pvals: Matriz quadrada indexada pelos nomes dos modelos, contendo p-valores pareados.
+        names: Lista com os nomes.
+        alpha: Nível de significância usado para destacar p-valores.
+    """
     table = Table(title="Post-hoc Nemenyi (p-valores)")
     table.add_column("", style="bold")
     for n in names:
@@ -248,7 +117,29 @@ def print_nemenyi_matrix(pvals, names: List[str], alpha: float = ALPHA) -> None:
     console.print(table)
 
 
-def friedman_nemenyi(all_scores: Dict[str, np.ndarray], model_names: List[str]) -> Dict:
+def friedman_nemenyi(
+        all_scores: Dict[str, np.ndarray],
+        model_names: List[str]
+) -> Dict:
+    """
+    Executa o teste global de Friedman para 3+ modelos (amostras pareadas por fold),
+    e, se for significativo, executa comparações pareadas post-hoc de Nemenyi.
+
+    Serve como diagnóstico para verificar se há evidência de diferenças entre múltiplos modelos
+    avaliados nos mesmos folds do CV do treino.
+
+    Args:
+        all_scores: Mapeamento, onde cada valor é um array NumPy, de tamanho N_FOLDS com
+            os valores da métrica por fold.
+        model_names: Lista de nomes de modelos a incluir no teste, devem existir como chaves no arg `all_scores`.
+
+    Returns:
+        Um dicionário contendo:
+            - "friedman_stat": estatística qui-quadrado do Friedman.
+            - "friedman_p": p-valor do Friedman.
+            - "significant": indica se p < ALPHA.
+            - opcionalmente "nemenyi_pvals": DataFrame de p-valores pareados (se significativo).
+    """
     arrays = [all_scores[n] for n in model_names]
     stat, p = stats.friedmanchisquare(*arrays)
     result = {"friedman_stat": float(stat), "friedman_p": float(p), "significant": bool(p < ALPHA)}
@@ -259,10 +150,30 @@ def friedman_nemenyi(all_scores: Dict[str, np.ndarray], model_names: List[str]) 
         nemenyi.columns = model_names
         result["nemenyi_pvals"] = nemenyi
         print_nemenyi_matrix(nemenyi, model_names, alpha=ALPHA)
+
     return result
 
 
-def print_duel_panel(a: str, b: str, metric: str, mean_a: float, mean_b: float, res: Dict) -> None:
+def print_duel_panel(
+        a: str,
+        b: str,
+        metric: str,
+        mean_a: float,
+        mean_b: float,
+        res: Dict
+) -> None:
+    """
+    Exibe um resumo detalhado e legível de uma comparação estatística pareada entre dois modelos,
+    utilizando um Panel do Rich.
+
+    Args:
+        a: Nome do modelo A.
+        b: Nome do modelo B.
+        metric: Nome da métrica sendo comparada.
+        mean_a: Média da métrica do modelo A.
+        mean_b: Média da métrica do modelo B.
+        res: Dicionário de resultado produzido por uma função de teste pareado.
+    """
     sig_style = "bold green" if res["significant"] else "dim"
     sig_mark = "✓ Sig." if res["significant"] else "✗ N.S."
 
@@ -278,14 +189,26 @@ def print_duel_panel(a: str, b: str, metric: str, mean_a: float, mean_b: float, 
     console.print(Panel(table, title=f"[bold]{metric} — duelo[/bold]"))
 
 
-# -----------------------------
-# Gate logic
-# -----------------------------
 def apply_gate_filter(
     scores: Dict[str, np.ndarray],
     baseline_name: str,
     gate_rel: float,
 ) -> Dict[str, np.ndarray]:
+    """
+    Aplica um gate de desempenho relativo a um baseline.
+    Um modelo é considerado elegível se:
+        - média dos scores_modelo >= média dos scores_baseline * (1 + gate_rel)
+
+    Args:
+        scores: Mapeamento por nome do nome_modelo e scores_por_fold.
+        baseline_name: Chave em `scores` que representa o modelo baseline.
+        gate_rel: Melhoria relativa mínima exigida vs média do baseline
+            (ex.: 0.02 significa +2% relativo).
+
+    Returns:
+        Um dicionário filtrado contendo apenas os modelos elegíveis e seus arrays por fold.
+        Também imprime uma tabela indicando quem passou/falhou no gate.
+    """
     if baseline_name not in scores:
         raise ValueError(f"Baseline '{baseline_name}' não encontrado entre os runs carregados.")
 
@@ -310,63 +233,66 @@ def apply_gate_filter(
     console.print(table)
 
     console.print(f"\n[bold]Total elegíveis:[/bold] {len(eligible)} de {len(scores)}")
+
     return eligible
 
 
-def log_summary_table_to_mlflow(scores: Dict[str, np.ndarray], metric: str) -> Path:
-    tmp_dir = Path("mlflow_artifacts_tmp")
-    tmp_dir.mkdir(exist_ok=True)
-    rows = []
-    for name, v in scores.items():
-        rows.append({
-            "model_name": name,
-            f"mean_{metric}": float(np.mean(v)),
-            f"std_{metric}": float(np.std(v, ddof=1)) if len(v) > 1 else 0.0,
-        })
-    df = pd.DataFrame(rows).sort_values(by=f"mean_{metric}", ascending=False)
-    p = tmp_dir / f"selection_summary_{metric}.csv"
-    df.to_csv(p, index=False)
-    mlflow.log_artifact(str(p), artifact_path="selection")
-    return p
+def register_winner(
+    client: MlflowClient,
+    run: Run,
+    model_name: str,
+    registry_name: str,
+    alias: str,
+    tags: Mapping[str, Any],
+) -> ModelVersion:
+    """
+    Registra o artefato de modelo logado em um run no MLflow,
+    define um alias no registry e adiciona tags na versão.
+    Assume que o run possui um artefato de modelo logado em `runs:/{run_id}/model`.
 
+    Args:
+        client: Instância de `mlflow.tracking.MlflowClient`.
+        run: Objeto do run do MLflow cujo artefato de modelo será registrado.
+        model_name: Identificador amigável do modelo, usado apenas na mensagem do console.
+        registry_name: Nome do Registered Model no MLflow Model Registry.
+        alias: Alias a ser definido para a versão criada (ex.: "candidate", "champion").
+        tags: Dicionário de tags a serem adicionadas à versão criada do modelo.
 
-def log_pairwise_results_to_mlflow(pairwise: list[dict], metric: str) -> Path:
-    tmp_dir = Path("mlflow_artifacts_tmp")
-    tmp_dir.mkdir(exist_ok=True)
-    df = pd.DataFrame(pairwise)
-    p = tmp_dir / f"pairwise_tests_{metric}.csv"
-    df.to_csv(p, index=False)
-    mlflow.log_artifact(str(p), artifact_path="selection/tests")
-    return p
-
-
-def log_friedman_to_mlflow(fr: dict, names: list[str], metric: str) -> None:
-    mlflow.log_metric("friedman_stat", float(fr["friedman_stat"]))
-    mlflow.log_metric("friedman_p", float(fr["friedman_p"]))
-    mlflow.log_param("friedman_significant", str(bool(fr["significant"])))
-    mlflow.log_param("friedman_n_models", len(names))
-    mlflow.log_param("friedman_metric", metric)
-
-    # se tiver Nemenyi, loga matriz como artifact
-    if "nemenyi_pvals" in fr:
-        tmp_dir = Path("mlflow_artifacts_tmp")
-        tmp_dir.mkdir(exist_ok=True)
-        p = tmp_dir / f"nemenyi_pvals_{metric}.csv"
-        fr["nemenyi_pvals"].to_csv(p, index=True)
-        mlflow.log_artifact(str(p), artifact_path="selection/tests")
-
-
-def register_winner(client, run, model_name, registry_name, alias, tags):
+    Returns:
+        O objeto `ModelVersion` criado.
+    """
     model_uri = f"runs:/{run.info.run_id}/model"
     mv = mlflow.register_model(model_uri, registry_name)
     client.set_registered_model_alias(registry_name, alias, mv.version)
     for key, value in tags.items():
         client.set_model_version_tag(registry_name, mv.version, key, str(value))
     console.print(f"  [green]✓[/green] {model_name} → {registry_name} v{mv.version} (alias: {alias})")
+
     return mv
 
 
-def wilcoxon_vs_baseline(scores_model: np.ndarray, scores_baseline: np.ndarray) -> Dict:
+def wilcoxon_vs_baseline(
+        scores_model: np.ndarray,
+        scores_baseline: np.ndarray
+) -> Dict:
+    """
+    Executa o teste pareado de Wilcoxon (signed-rank) entre os scores por fold de dois modelos.
+    O teste é aplicado às diferenças por fold (modelo - baseline), assumindo que os vetores
+    estão alinhados fold a fold.
+
+    Args:
+        scores_model: Array NumPy de tamanho N_FOLDS com scores por fold do modelo.
+        scores_baseline: Array NumPy de tamanho N_FOLDS com scores por fold do baseline.
+
+    Returns:
+        Um dicionário com:
+            - "test": sempre "Wilcoxon".
+            - "p_value": p-valor.
+            - "stat": estatística do teste.
+            - "mean_diff": média(scores_model - scores_baseline).
+            - "cohens_d": tamanho de efeito calculado sobre as diferenças por fold.
+            - "significant": indica se p_value < ALPHA.
+    """
     diff = scores_model - scores_baseline
     if np.allclose(diff, 0):
         stat, p_val = 0.0, 1.0
@@ -374,7 +300,8 @@ def wilcoxon_vs_baseline(scores_model: np.ndarray, scores_baseline: np.ndarray) 
         stat, p_val = stats.wilcoxon(scores_model, scores_baseline)
     std_diff = np.std(diff, ddof=1) if len(diff) > 1 else 0.0
     d = float(np.mean(diff) / std_diff) if std_diff > 0 else 0.0
-    return {
+
+    wilcoxon_dict = {
         "test": "Wilcoxon",
         "p_value": float(p_val),
         "stat": float(stat),
@@ -383,6 +310,8 @@ def wilcoxon_vs_baseline(scores_model: np.ndarray, scores_baseline: np.ndarray) 
         "significant": bool(p_val < ALPHA),
     }
 
+    return wilcoxon_dict
+
 
 def decide_winner(
     scores: Dict[str, np.ndarray],
@@ -390,6 +319,33 @@ def decide_winner(
     baseline: str,
     decision: str,
 ) -> Dict:
+    """
+    Decide o modelo vencedor final dado o conjunto de scores por fold, utilizando uma das
+    políticas de decisão suportadas.
+
+    Políticas:
+    - "baseline_duel": compara o melhor modelo por média contra o `baseline` utilizando Wilcoxon.
+        Se o desafiante for significativamente melhor (p < ALPHA e mean_diff > 0),
+        o desafiante vence; caso contrário, o baseline vence.
+        Se o baseline não estiver presente, faz fallback para um duelo top-2.
+    - "top2_duel": compara top-1 vs top-2 por média utilizando Wilcoxon. Se o top-1 não for
+        significativamente melhor, escolhe o top-2 (critério de parcimônia em caso de empate).
+
+    Args:
+        scores: Mapeamento {nome_modelo: scores_por_fold} (arrays de tamanho N_FOLDS).
+        metric: Nome da métrica que está sendo otimizada.
+        baseline: Nome do modelo baseline a ser usado quando decision="baseline_duel".
+        decision: Política de decisão ("baseline_duel" ou "top2_duel").
+
+    Returns:
+        Um dicionário descrevendo a decisão, incluindo:
+            - "winner", "loser"
+            - "duel_a", "duel_b" (modelos comparados)
+            - "result" (resultado do teste) ou None
+            - "ranked" (modelos ordenados por média desc)
+            - "means" (médias por modelo)
+            - "reason" (string explicando o motivo)
+    """
     names = list(scores.keys())
     ranked = sorted(names, key=lambda n: float(np.mean(scores[n])), reverse=True)
 
@@ -397,15 +353,16 @@ def decide_winner(
         if len(ranked) < 2:
             raise ValueError("Precisa de pelo menos 2 modelos para top2_duel.")
         a, b = ranked[0], ranked[1]
-        res = wilcoxon_vs_baseline(scores[a], scores[b])  # a - b
-        # se a não for significativamente melhor, escolhe b (parcimônia: o segundo)
+        res = wilcoxon_vs_baseline(scores[a], scores[b])
+
         if res["significant"] and res["mean_diff"] > 0:
             winner, loser = a, b
             reason = "top1_significantly_better_than_top2"
         else:
             winner, loser = b, a
             reason = "no_sig_diff_choose_top2"
-        return {
+        
+        top_duel_dict = {
             "winner": winner,
             "loser": loser,
             "baseline": None,
@@ -419,12 +376,12 @@ def decide_winner(
             "means": {n: float(np.mean(scores[n])) for n in ranked},
         }
 
-    # baseline_duel
+        return top_duel_dict
+
     if baseline not in scores:
-        # baseline foi filtrado (ex.: gate best_cv_score). Faz fallback.
         ranked = sorted(scores.keys(), key=lambda n: float(np.mean(scores[n])), reverse=True)
         if len(ranked) < 2:
-            return {
+            baseline_dict = {
                 "winner": ranked[0],
                 "loser": None,
                 "baseline": None,
@@ -438,6 +395,9 @@ def decide_winner(
                 "means": {n: float(np.mean(scores[n])) for n in ranked},
                 "reason": "baseline_not_eligible",
             }
+
+            return baseline_dict
+
         a, b = ranked[0], ranked[1]
         res = wilcoxon_vs_baseline(scores[a], scores[b])
         if res["significant"] and res["mean_diff"] > 0:
@@ -461,10 +421,8 @@ def decide_winner(
             "reason": reason,
         }
 
-    # desafiante = melhor por média que NÃO seja o baseline
     challenger = ranked[0] if ranked[0] != baseline else (ranked[1] if len(ranked) > 1 else baseline)
     if challenger == baseline:
-        # só existe baseline
         return {
             "winner": baseline,
             "loser": None,
@@ -479,7 +437,7 @@ def decide_winner(
             "means": {n: float(np.mean(scores[n])) for n in ranked},
         }
 
-    res = wilcoxon_vs_baseline(scores[challenger], scores[baseline])  # challenger - baseline
+    res = wilcoxon_vs_baseline(scores[challenger], scores[baseline])
 
     if res["significant"] and res["mean_diff"] > 0:
         winner = challenger
@@ -506,14 +464,37 @@ def decide_winner(
     }
 
 
-def get_gate_score_recall(client, run, n_folds: int) -> float | None:
+def get_gate_score_recall(
+    client: MlflowClient,
+    run: Run,
+    n_folds: int,
+) -> float | None:
+    """
+    Calcula um score de gate de recall de treino para um run, com fallbacks para suportar
+    diferentes pipelines de treino (ex.: sklearn search vs CV manual).
+
+    Ordem de resolução:
+    1) Se o run logou a métrica "best_cv_score", retorna esse valor.
+    2) Caso contrário, se o run logou "cv_mean_recall".
+    3) Caso contrário, tenta reconstruir a média do recall a partir do histórico por fold da métrica "recall"
+        utilizando steps 0, n_folds-1.
+    Se nenhuma opção estiver disponível, retorna None.
+
+    Args:
+        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar histórico de métricas.
+        run: Objeto do run do MLflow.
+        n_folds: Número esperado de folds.
+
+    Returns:
+        Um float com o score de recall para o gate, se possível, caso contrário None.
+    """
     v = run.data.metrics.get("best_cv_score")
     if v is not None:
         return float(v)
     v = run.data.metrics.get("cv_mean_recall")
     if v is not None:
         return float(v)
-    # fallback: média do recall por fold (treino)
+
     hist = client.get_metric_history(run.info.run_id, "recall")
     hist = sorted(hist, key=lambda m: (m.step, m.timestamp))
     by_step = {}
@@ -524,12 +505,10 @@ def get_gate_score_recall(client, run, n_folds: int) -> float | None:
             by_step[m.step] = m.value
     if len(by_step) == n_folds:
         return float(np.mean([by_step[i] for i in range(n_folds)]))
+
     return None
 
 
-# -----------------------------
-# MAIN
-# -----------------------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 
@@ -545,11 +524,9 @@ def main():
     )
     parser.add_argument("--baseline-run", default="logreg", help="Baseline (model_name), usado em baseline_duel")
 
-    # gate técnico (média vs baseline) - já existia
     parser.add_argument("--apply-gate", action="store_true", help="Aplicar gate técnico vs baseline (por média)")
     parser.add_argument("--gate-rel", type=float, default=0.02, help="Ganho relativo mínimo vs baseline (média)")
 
-    # gate por best_cv_score (recall de treino do search) - NOVO
     parser.add_argument(
         "--gate-best-cv-score",
         type=float,
@@ -590,13 +567,11 @@ def main():
         mlflow.log_param("registry_name", args.registry_name)
         mlflow.log_param("models_filter", " ".join(args.models) if args.models else "")
 
-        # 1) Seleciona runs (últimos por model + regra especial MLP)
         runs = get_latest_runs_with_mlp_from_refit(client)
         if len(runs) < 2:
             console.print("[red]Precisa de pelo menos 2 runs.[/red]")
             return
 
-        # 2) Gate por best_cv_score (ou métrica definida)
         if args.gate_best_cv_score and args.gate_best_cv_score > 0:
             kept = []
             gate_table = Table(title=f"Gate: {args.gate_metric_name} >= {args.gate_best_cv_score}")
@@ -627,12 +602,11 @@ def main():
                 mlflow.set_tag("status", "gate_left_less_than_2")
                 return
 
-        # 3) Carregar métrica por fold para cada run
         tech_scores: Dict[str, np.ndarray] = {}
-        run_map: Dict[str, Any] = {}  # model_name -> run
+        run_map: Dict[str, Any] = {}
 
         for r in runs:
-            name = run_display_name(r)  # model_name
+            name = run_display_name(r)
             s = load_fold_metric(client, r.info.run_id, metric)
             if len(s) == N_FOLDS:
                 tech_scores[name] = s
@@ -644,7 +618,6 @@ def main():
             mlflow.set_tag("status", "missing_fold_metrics")
             return
 
-        # 4) Filtrar por lista explícita de modelos (opcional)
         if args.models:
             wanted = set(args.models)
             tech_scores = {k: v for k, v in tech_scores.items() if k in wanted}
@@ -657,10 +630,8 @@ def main():
                 mlflow.set_tag("status", "models_filter_left_less_than_2")
                 return
 
-        # loga quais runs efetivamente entraram
         mlflow.log_dict({n: run_map[n].info.run_id for n in names}, "selection/compared_runs.json")
 
-        # 5) Gate técnico vs baseline (média)
         if args.apply_gate:
             tech_scores = apply_gate_filter(tech_scores, args.baseline_run, args.gate_rel)
             names = sorted(tech_scores.keys())
@@ -674,7 +645,6 @@ def main():
                     mlflow.set_tag("winner", names[0])
                 return
 
-        # 6) Resumo
         console.rule(f"[bold]Comparação — métrica={metric} | folds={N_FOLDS} | α={ALPHA}[/bold]")
         t = Table(title="Resumo técnico (por fold)")
         t.add_column("model_name", style="cyan")
@@ -685,7 +655,6 @@ def main():
             t.add_row(n, f"{np.mean(v):.6f}", f"{np.std(v, ddof=1):.6f}")
         console.print(t)
 
-        # 7) Friedman (diagnóstico)
         if len(names) >= 3:
             fr = friedman_nemenyi(tech_scores, names)
             mlflow.log_metric("friedman_stat", float(fr["friedman_stat"]))
@@ -698,7 +667,6 @@ def main():
                 fr["nemenyi_pvals"].to_csv(p, index=True)
                 mlflow.log_artifact(str(p), artifact_path="selection/tests")
 
-        # 8) Decisão final
         decision_out = decide_winner(
             scores=tech_scores,
             metric=metric,
@@ -730,7 +698,6 @@ def main():
                 f"p={res['p_value']:.6f} Δ={res['mean_diff']:+.6f} d={res['cohens_d']:.3f}[/dim]"
             )
 
-        # 9) Registry (opcional)
         if args.register:
             if winner not in run_map:
                 raise RuntimeError(f"Não achei o run do winner='{winner}' para registrar.")

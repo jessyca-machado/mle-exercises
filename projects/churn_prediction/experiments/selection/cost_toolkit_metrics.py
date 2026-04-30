@@ -4,25 +4,26 @@ Avaliação de custo/benefício multi-modelo (Telco churn) a partir de runs no M
 Assume que cada run candidato possui artifacts por fold:
 - oof/y_true_fold_{k}.npy
 - oof/y_proba_fold_{k}.npy
+
 E que N_FOLDS é o mesmo para todos.
 
 Uso:
-    # cálculo do trade off de custo normal, assumindo trheshold=0.5:
+    # cálculo do trade off de custo normal, assumindo threshold=0.5:
     python experiments/selection/cost_toolkit_metrics.py
 
-    # cálculo do trade off de custo somente para os modelos com recall de treino >= 0.8, buscando o trheshold que maximize o valor líquido:
-    python experiments/selection/cost_toolkit_metrics.py \                                   
-    --sweep-thresholds 0.3 0.95 0.05 \
-    --gate-best-cv-score 0.8 \
-    --gate-metric-name best_cv_score \
-    --log-mlflow
-
+    # cálculo do trade off de custo somente para os modelos com recall de treino >= 0.8,
+    # buscando o threshold que maximize o valor líquido:
+    python experiments/selection/cost_toolkit_metrics.py \
+        --sweep-thresholds 0.3 0.95 0.05 \
+        --gate-best-cv-score 0.8 \
+        --gate-metric-name best_cv_score \
+        --log-mlflow
 """
 import argparse
 import logging
 import tempfile
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Any, Optional
 
 import mlflow
 import numpy as np
@@ -35,28 +36,66 @@ from src.utils.constants import (
     MLFLOW_TRACKING_URI,
     N_FOLDS,
 )
-
+from src.ml.mlflow_selection_utils import (
+    get_latest_runs_with_mlp_from_refit,
+    run_display_name,
+    has_any_oof,
+)
 from src.ml.cost_utils import CostSpec, sweep_thresholds_cost
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
-# -----------------------------
-# Business definitions
-# -----------------------------
 @dataclass(frozen=True)
 class BusinessScenario:
+    """Especificação de custos/benefícios do cenário de negócio."""
     benefit_tp: float = 10.0
     cost_fp: float = 1.0
-    cost_fn: float = 5.0  # usado no modo threshold/sweep
+    cost_fn: float = 5.0
 
 
-def net_value_from_confusion(tp: int, fp: int, fn: int, scenario: BusinessScenario) -> float:
+def net_value_from_confusion(
+        tp: int,
+        fp: int,
+        fn: int,
+        scenario: BusinessScenario
+) -> float:
+    """
+    Calcula o valor líquido (net value) a partir de TP/FP/FN e de um cenário de negócio.
+
+    Args:
+        tp: Número de verdadeiros positivos.
+        fp: Número de falsos positivos.
+        fn: Número de falsos negativos.
+        scenario: Instância de `BusinessScenario` contendo os pesos de custo/benefício.
+
+    Returns:
+        Valor líquido calculado como float.
+    """
     return (tp * scenario.benefit_tp) - (fp * scenario.cost_fp) - (fn * scenario.cost_fn)
 
 
-def roi_from_net_value(net_value: float, total_cost: float, on_zero_cost: str = "nan") -> float:
+def roi_from_net_value(
+        net_value: float,
+        total_cost: float,
+        on_zero_cost: str = "nan"
+) -> float:
+    """
+    Calcula ROI (retorno sobre investimento) a partir do valor líquido e do custo total.
+    Quando total_cost <= 0, o comportamento depende de `on_zero_cost`.
+
+    Args:
+        net_value: Valor líquido calculado.
+        total_cost: Custo total.
+        on_zero_cost: Estratégia quando total_cost <= 0:
+            - "nan": retorna NaN.
+            - "inf": retorna +inf se net_value>0 e -inf caso contrário.
+            - "zero": retorna 0.0.
+
+    Returns:
+        ROI como float.
+    """
     if total_cost <= 0:
         if on_zero_cost == "inf":
             return float("inf") if net_value > 0 else float("-inf")
@@ -66,129 +105,27 @@ def roi_from_net_value(net_value: float, total_cost: float, on_zero_cost: str = 
     return float(net_value / total_cost)
 
 
-# -----------------------------
-# MLflow helpers
-# -----------------------------
-def run_display_name(run) -> str:
-    return run.data.params.get("model_name") or run.info.run_id
-
-def is_cv_run(run) -> bool:
-    p = run.data.params
-    return (p.get("cv_folds") == str(N_FOLDS) or p.get("n_folds") == str(N_FOLDS))
-
-def is_mlp_refit_run(run) -> bool:
-    p = run.data.params
-    return p.get("model_name") == "mlp" and ("best_config_name" in p)
-
-def get_latest_mlp_refit_run(client) -> object | None:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    # filtro por params no MLflow search_runs é meio chato (params.*),
-    # então fazemos busca ampla e filtramos em Python.
-    runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-    for r in runs:
-        if is_mlp_refit_run(r):
-            return r
-    return None
-
-def find_cv_run_by_config_name(client, config_name: str) -> object | None:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-
-    for r in runs:
-        p = r.data.params
-        # 1) melhor: param explícito
-        if p.get("config_name") == config_name and is_cv_run(r):
-            return r
-        # 2) fallback: runName
-        if r.data.tags.get("mlflow.runName") == config_name and is_cv_run(r):
-            return r
-    return None
-
-
-def has_any_oof(client: mlflow.tracking.MlflowClient, run_id: str) -> bool:
-    try:
-        files = client.list_artifacts(run_id, path="oof")
-        paths = [f.path for f in files]
-    except Exception:
-        return False
-    # aceita padrão sem prefixo e com prefixo
-    has_true0 = any(p.endswith("y_true_fold_0.npy") for p in paths)
-    has_proba0 = any(p.endswith("y_proba_fold_0.npy") for p in paths)
-    return bool(has_true0 and has_proba0)
-
-
-def get_latest_runs_with_mlp_from_refit(client: mlflow.tracking.MlflowClient) -> list:
-    exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
-    if exp is None:
-        raise RuntimeError(f"Experimento '{MLFLOW_EXPERIMENT_NAME}' não encontrado.")
-
-    all_runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        order_by=["attributes.start_time DESC"],
-        max_results=1000,
-    )
-
-    chosen = {}
-
-    # 1) primeiro pega o MLP via refit -> best_config_name -> run de CV dessa config
-    mlp_refit = get_latest_mlp_refit_run(client)
-    if mlp_refit is not None:
-        best_config_name = mlp_refit.data.params.get("best_config_name")
-        if best_config_name:
-            mlp_cv_run = find_cv_run_by_config_name(client, best_config_name)
-            if mlp_cv_run is not None and has_any_oof(client, mlp_cv_run.info.run_id):
-                chosen["mlp"] = mlp_cv_run
-            else:
-                console.print(
-                    f"[yellow]Aviso:[/yellow] não achei run de CV para best_config_name='{best_config_name}'. "
-                    "Vou cair no fallback do último CV do mlp."
-                )
-
-    # 2) para os demais modelos (e fallback do mlp se necessário): último run CV por model_name
-    for r in all_runs:
-        p = r.data.params
-        model_name = p.get("model_name")
-        if not model_name:
-            continue
-        if not is_cv_run(r):
-            continue
-        if model_name in chosen:
-            continue
-        if not has_any_oof(client, r.info.run_id):
-            continue
-
-        chosen[model_name] = r
-
-    return list(chosen.values())
-
-
 def load_oof_for_run(
-    client: mlflow.tracking.MlflowClient, run_id: str
+    client: mlflow.tracking.MlflowClient,
+    run_id: str,
 ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    """
+    Baixa artifacts OOF (out-of-fold) de um run no MLflow e retorna listas por fold.
+
+    Args:
+        client: Instância de `mlflow.tracking.MlflowClient` para listar e baixar artifacts.
+        run_id: ID do run no MLflow.
+
+    Returns:
+        Uma tupla (y_true_folds, y_proba_folds), onde cada item é uma lista de arrays NumPy,
+        um por fold, com os rótulos verdadeiros e as probabilidades/scores.
+    """
     y_true_folds: List[np.ndarray] = []
     y_proba_folds: List[np.ndarray] = []
 
-    # lista arquivos em oof/
     files = client.list_artifacts(run_id, path="oof")
     paths = [f.path for f in files]
 
-    # detecta prefixo:
-    # - padrão: oof/y_true_fold_0.npy
-    # - com prefixo: oof/<prefix>y_true_fold_0.npy
     if "oof/y_true_fold_0.npy" in paths and "oof/y_proba_fold_0.npy" in paths:
         prefix = ""
     else:
@@ -200,11 +137,8 @@ def load_oof_for_run(
                 f"Arquivos encontrados em oof/: {paths[:200]}"
             )
 
-        # pega o prefixo a partir do y_true_fold_0
-        true0 = true0_candidates[0]  # ex: oof/mlp_config_3_kbest_all_y_true_fold_0.npy
-        prefix = true0[len("oof/") : -len("y_true_fold_0.npy")]  # ex: "mlp_config_3_kbest_all_"
-
-        # valida que existe o par correspondente com o mesmo prefixo
+        true0 = true0_candidates[0]
+        prefix = true0[len("oof/") : -len("y_true_fold_0.npy")]
         expected_proba0 = f"oof/{prefix}y_proba_fold_0.npy"
         if expected_proba0 not in paths:
             raise FileNotFoundError(
@@ -232,16 +166,38 @@ def load_oof_for_run(
     return y_true_folds, y_proba_folds
 
 
-# -----------------------------
-# Business evaluation functions
-# -----------------------------
-def confusion_at_threshold(y_true: np.ndarray, y_proba: np.ndarray, thr: float) -> Tuple[int, int, int, int]:
+def confusion_at_threshold(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    thr: float,
+) -> Tuple[int, int, int, int]:
+    """
+    Calcula TN, FP, FN e TP a partir de y_true e y_proba, utilizando um threshold fixo.
+
+    Args:
+        y_true: Array de rótulos verdadeiros (0/1).
+        y_proba: Array de probabilidades/scores (quanto maior, maior chance de classe positiva).
+        thr: Threshold (limiar) para converter probabilidades em predição binária.
+
+    Returns:
+        Uma tupla (tn, fp, fn, tp) como inteiros.
+    """
     y_pred = (y_proba >= thr).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0,1]).ravel()
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     return int(tn), int(fp), int(fn), int(tp)
 
 
 def recall_from_confusion(tp: int, fn: int) -> float:
+    """
+    Calcula recall (sensibilidade) a partir de TP e FN.
+
+    Args:
+        tp: Número de verdadeiros positivos.
+        fn: Número de falsos negativos.
+
+    Returns:
+        Recall como float. Se TP+FN == 0, retorna NaN.
+    """
     denom = tp + fn
     return float(tp / denom) if denom > 0 else float("nan")
 
@@ -252,12 +208,35 @@ def net_value_at_threshold(
     thr: float,
     scenario: BusinessScenario,
     roi_on_zero_cost: str = "nan",
-) -> Dict:
+) -> Dict[str, float]:
+    """
+    Avalia valor líquido e ROI para um threshold fixo, com base no cenário de negócio.
+
+    Args:
+        y_true: Array de rótulos verdadeiros (0/1).
+        y_proba: Array de probabilidades/scores.
+        thr: Threshold para classificação.
+        scenario: Instância de `BusinessScenario`.
+        roi_on_zero_cost: Estratégia quando total_cost <= 0.
+
+    Returns:
+        Dicionário:
+            - "tn", "fp", "fn", "tp": contagens como float
+            - "net_value": valor líquido
+            - "roi": retorno sobre custo
+    """
     tn, fp, fn, tp = confusion_at_threshold(y_true, y_proba, thr)
     net_value = net_value_from_confusion(tp, fp, fn, scenario)
     total_cost = fp * scenario.cost_fp
     roi = roi_from_net_value(net_value, total_cost, on_zero_cost=roi_on_zero_cost)
-    return {"tn": tn, "fp": fp, "fn": fn, "tp": tp, "net_value": float(net_value), "roi": float(roi)}
+    return {
+        "tn": float(tn),
+        "fp": float(fp),
+        "fn": float(fn),
+        "tp": float(tp),
+        "net_value": float(net_value),
+        "roi": float(roi),
+    }
 
 
 def net_value_at_topk(
@@ -266,9 +245,25 @@ def net_value_at_topk(
     topk: float,
     scenario: BusinessScenario,
     roi_on_zero_cost: str = "nan",
-) -> Dict:
+) -> Dict[str, float]:
     """
-    Campanha com capacidade: avalia ganhos/perdas APENAS nos tratados (top-k).
+    Avalia valor líquido e ROI no top 4 K modelos(top-k).
+    Nesse modo, apenas os `k` modelos com maiores scores são tratados.
+
+    Args:
+        y_true: Array de rótulos verdadeiros (0/1).
+        y_proba: Array de probabilidades/scores.
+        topk: Fração da base a tratar (0 < topk <= 1).
+        scenario: Instância de `BusinessScenario`.
+        roi_on_zero_cost: Estratégia quando total_cost <= 0.
+
+    Returns:
+        Dicionário com chaves:
+            - "k": número absoluto tratado
+            - "topk": fração tratada
+            - "tn", "fp", "fn", "tp": contagens como float
+            - "net_value": valor líquido
+            - "roi": retorno sobre custo
     """
     if not (0 < topk <= 1.0):
         raise ValueError("topk deve estar em (0, 1].")
@@ -282,26 +277,41 @@ def net_value_at_topk(
 
     tp = int(((y_true == 1) & (treated == 1)).sum())
     fp = int(((y_true == 0) & (treated == 1)).sum())
-    fn = int(((y_true == 1) & (treated == 0)).sum())  # logging
-    tn = int(((y_true == 0) & (treated == 0)).sum())  # logging
+    fn = int(((y_true == 1) & (treated == 0)).sum())
+    tn = int(((y_true == 0) & (treated == 0)).sum())
 
     net_value = (tp * scenario.benefit_tp) - (fp * scenario.cost_fp)
     total_cost = fp * scenario.cost_fp
     roi = roi_from_net_value(net_value, total_cost, on_zero_cost=roi_on_zero_cost)
 
     return {
-        "k": int(k),
+        "k": float(k),
         "topk": float(topk),
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
-        "tp": tp,
+        "tn": float(tn),
+        "fp": float(fp),
+        "fn": float(fn),
+        "tp": float(tp),
         "net_value": float(net_value),
         "roi": float(roi),
     }
 
 
 def summarize_folds(values: List[float]) -> Dict[str, float]:
+    """
+    Resume uma lista de valores por fold em estatísticas descritivas: média, desvio padrão, mínimo e máximo.
+    Valores não finitos (NaN/inf) são removidos antes do cálculo.
+
+    Args:
+        values: Lista de valores (um por fold).
+
+    Returns:
+        Dicionário com chaves:
+            - "mean": média
+            - "std": desvio padrão amostral
+            - "min": mínimo
+            - "max": máximo
+        Se não houver valores finitos, retorna tudo como NaN.
+    """
     arr = np.array(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
@@ -314,7 +324,21 @@ def summarize_folds(values: List[float]) -> Dict[str, float]:
     }
 
 
-def mode_label(meta: Dict) -> str:
+def mode_label(meta: Dict[str, Any]) -> str:
+    """
+    Gera um identificador textual do modo de avaliação, utilizado para namespacing
+    de métricas no MLflow.
+
+    Args:
+        meta: Dicionário com metadados do modo de avaliação. Espera a chave "mode" e,
+            dependendo do modo, chaves adicionais como "threshold" ou "topk".
+
+    Returns:
+        String com o rótulo do modo, por exemplo:
+            - "threshold_thr_0.50"
+            - "topk_0.1000"
+            - "sweep_foldwise"
+    """
     if meta["mode"] == "threshold":
         return f"threshold_thr_{meta['threshold']:.2f}"
     if meta["mode"] == "topk":
@@ -322,7 +346,17 @@ def mode_label(meta: Dict) -> str:
     return "sweep_foldwise"
 
 
-def get_run_metric_value(run, metric_name: str) -> float | None:
+def get_run_metric_value(run: Any, metric_name: str) -> Optional[float]:
+    """
+    Lê o valor de uma métrica agregada armazenada no próprio run do MLflow.
+
+    Args:
+        run: Objeto `mlflow.entities.Run`.
+        metric_name: Nome da métrica a ser lida de `run.data.metrics`.
+
+    Returns:
+        O valor da métrica como float se existir; caso contrário, None.
+    """
     v = run.data.metrics.get(metric_name)
     if v is None:
         return None
@@ -332,9 +366,6 @@ def get_run_metric_value(run, metric_name: str) -> float | None:
         return None
 
 
-# -----------------------------
-# MAIN
-# -----------------------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 
@@ -448,7 +479,6 @@ def main():
         fold_recalls: List[float] = []
         fold_thresholds: List[float] = []
 
-        # modo sweep_thresholds
         if args.sweep_thresholds is not None:
             start, end, step = args.sweep_thresholds
             thresholds = np.arange(start, end + 1e-12, step)
@@ -483,9 +513,8 @@ def main():
                 fold_thresholds.append(thr)
 
                 net_value = float(best["net_value"])
-                fp = int(best["fp"])
 
-                # >>> AQUI entra o recall do fold no threshold ótimo <<<
+                fp = int(best["fp"])
                 tp = int(best["tp"])
                 fn = int(best["fn"])
                 fold_recalls.append(recall_from_confusion(tp, fn))
@@ -503,7 +532,6 @@ def main():
                 "best_threshold_std": float(thr_sum["std"]) if np.isfinite(thr_sum["std"]) else float("nan"),
             }
 
-        # modo topk
         elif args.topk and args.topk > 0:
             for y_true, y_proba in zip(y_true_folds, y_proba_folds):
                 m = net_value_at_topk(y_true, y_proba, float(args.topk), scenario, args.roi_on_zero_cost)
@@ -512,7 +540,6 @@ def main():
                 fold_recalls.append(recall_from_confusion(m["tp"], m["fn"]))
             meta = {"mode": "topk", "topk": float(args.topk)}
 
-        # threshold fixo
         else:
             thr = float(args.threshold)
             for y_true, y_proba in zip(y_true_folds, y_proba_folds):
@@ -535,9 +562,6 @@ def main():
             **meta
         })
 
-        # -----------------------------
-        # MLflow logging (sem conflito de params no parent)
-        # -----------------------------
         if args.log_mlflow:
             mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
@@ -551,7 +575,6 @@ def main():
             parent_roi_name = f"business{tag}.{mode_id}.roi"
             parent_recall_name = f"business{tag}.{mode_id}.recall"
 
-            # anexa ao parent run do modelo: SOMENTE MÉTRICAS (params conflitam)
             with mlflow.start_run(run_id=r.info.run_id):
                 for fold_idx, (nv, roi, rec) in enumerate(zip(fold_net_values, fold_rois, fold_recalls)):
                     mlflow.log_metric(parent_nv_name, float(nv), step=fold_idx)
@@ -575,7 +598,6 @@ def main():
                         float(meta.get("best_threshold_std", float("nan")))
                     )  
 
-                # nested run: params + métricas "limpas"
                 with mlflow.start_run(run_name=f"business_eval_{mode_id}", nested=True):
                     mlflow.log_param("business_mode", meta["mode"])
                     mlflow.log_param("roi_on_zero_cost", args.roi_on_zero_cost)
