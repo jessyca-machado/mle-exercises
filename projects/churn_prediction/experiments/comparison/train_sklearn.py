@@ -5,6 +5,9 @@ Inclui run_randomized_search com barra de progresso por modelo.
 
 Uso:
     python experiments/comparison/train_sklearn.py
+
+Para visualizar:
+    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
 
 import logging
@@ -35,11 +38,10 @@ from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
-    RANDOM_SEED,
     PRIMARY_METRIC,
     TARGET_COL,
     YES_NO_COLS,
-    RANDOM_STATE,
+    RANDOM_SEED,
     FEATURES_COLS,
     PARAM_DISTS,
     N_ITER_BY_MODEL,
@@ -86,14 +88,14 @@ def get_models() -> Dict[str, Any]:
         seeds/parâmetros básicos para reprodutibilidade.
     """
     return {
-        "DecisionTree": DecisionTreeClassifier(random_state=RANDOM_STATE),
-        "RandomForest": RandomForestClassifier(random_state=RANDOM_STATE),
-        "SVC_rbf": SVC(kernel="rbf", probability=True, random_state=RANDOM_STATE),
-        "GradientBoosting": GradientBoostingClassifier(random_state=RANDOM_STATE),
-        "dummy_most_frequent": DummyClassifier(strategy="most_frequent", random_state=RANDOM_STATE),
-        "dummy_stratified": DummyClassifier(strategy="stratified", random_state=RANDOM_STATE),
-        "logreg": LogisticRegression(random_state=RANDOM_STATE, max_iter=5000, solver="saga"),
-        "xgboost": XGBClassifier(random_state=RANDOM_STATE, n_jobs=-1, eval_metric="aucpr", verbosity=0),
+        "DecisionTree": DecisionTreeClassifier(random_state=RANDOM_SEED),
+        "RandomForest": RandomForestClassifier(random_state=RANDOM_SEED),
+        "SVC_rbf": SVC(kernel="rbf", probability=True, random_state=RANDOM_SEED),
+        "GradientBoosting": GradientBoostingClassifier(random_state=RANDOM_SEED),
+        "dummy_most_frequent": DummyClassifier(strategy="most_frequent", random_state=RANDOM_SEED),
+        "dummy_stratified": DummyClassifier(strategy="stratified", random_state=RANDOM_SEED),
+        "logreg": LogisticRegression(random_state=RANDOM_SEED, max_iter=5000, solver="saga"),
+        "xgboost": XGBClassifier(random_state=RANDOM_SEED, n_jobs=-1, eval_metric="aucpr", verbosity=0),
     }
 
 
@@ -182,6 +184,47 @@ def _merge_kbest_into_param_dist(param_dist: Any) -> Any:
         return {**param_dist, kbest_key: [15, "all"]}
 
     return param_dist
+
+
+def log_best_estimator_fold_metrics(best_estimator: Pipeline, X_df: pd.DataFrame, y: pd.Series) -> None:
+    """
+    Gera predições out-of-fold (OOF) com o `best_estimator` e loga métricas por fold no MLflow.
+
+    Args:
+        best_estimator: Pipeline treinável (pipeline completo), que será clonado e treinado fold a fold.
+        X_df: DataFrame com features.
+        y: Série com target.
+    """
+    cv = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_SEED)
+    tmp_dir = Path("mlflow_artifacts_tmp")
+    tmp_dir.mkdir(exist_ok=True)
+
+    for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_df, y)):
+        X_tr, X_te = X_df.iloc[train_idx], X_df.iloc[test_idx]
+        y_tr = y.iloc[train_idx].to_numpy().astype(int)
+        y_te = y.iloc[test_idx].to_numpy().astype(int)
+
+        est = clone(best_estimator)
+        est.fit(X_tr, y_tr)
+
+        y_pred = est.predict(X_te)
+
+        if hasattr(est, "predict_proba"):
+            y_prob = est.predict_proba(X_te)[:, 1]
+        else:
+            y_score = est.decision_function(X_te)
+            y_prob = (y_score - y_score.min()) / (y_score.max() - y_score.min() + 1e-12)
+
+        metrics = compute_metrics(y_te, y_pred, y_prob)
+        for metric_name, value in metrics.items():
+            mlflow.log_metric(metric_name, float(value), step=fold_idx)
+
+        y_true_path = tmp_dir / f"y_true_fold_{fold_idx}.npy"
+        y_proba_path = tmp_dir / f"y_proba_fold_{fold_idx}.npy"
+        np.save(y_true_path, y_te.astype(int))
+        np.save(y_proba_path, y_prob.astype(float))
+        mlflow.log_artifact(str(y_true_path), artifact_path="oof")
+        mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
 
 
 def run_randomsearch_for_model(
@@ -315,47 +358,6 @@ def run_random_search(models: Dict[str, Any], X_df: pd.DataFrame, y: pd.Series) 
             progress.update(task, advance=1)
 
     return results
-
-
-def log_best_estimator_fold_metrics(best_estimator: Pipeline, X_df: pd.DataFrame, y: pd.Series) -> None:
-    """
-    Gera predições out-of-fold (OOF) com o `best_estimator` e loga métricas por fold no MLflow.
-
-    Args:
-        best_estimator: Pipeline treinável (pipeline completo), que será clonado e treinado fold a fold.
-        X_df: DataFrame com features.
-        y: Série com target.
-    """
-    cv = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_SEED)
-    tmp_dir = Path("mlflow_artifacts_tmp")
-    tmp_dir.mkdir(exist_ok=True)
-
-    for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_df, y)):
-        X_tr, X_te = X_df.iloc[train_idx], X_df.iloc[test_idx]
-        y_tr = y.iloc[train_idx].to_numpy().astype(int)
-        y_te = y.iloc[test_idx].to_numpy().astype(int)
-
-        est = clone(best_estimator)
-        est.fit(X_tr, y_tr)
-
-        y_pred = est.predict(X_te)
-
-        if hasattr(est, "predict_proba"):
-            y_prob = est.predict_proba(X_te)[:, 1]
-        else:
-            y_score = est.decision_function(X_te)
-            y_prob = (y_score - y_score.min()) / (y_score.max() - y_score.min() + 1e-12)
-
-        metrics = compute_metrics(y_te, y_pred, y_prob)
-        for metric_name, value in metrics.items():
-            mlflow.log_metric(metric_name, float(value), step=fold_idx)
-
-        y_true_path = tmp_dir / f"y_true_fold_{fold_idx}.npy"
-        y_proba_path = tmp_dir / f"y_proba_fold_{fold_idx}.npy"
-        np.save(y_true_path, y_te.astype(int))
-        np.save(y_proba_path, y_prob.astype(float))
-        mlflow.log_artifact(str(y_true_path), artifact_path="oof")
-        mlflow.log_artifact(str(y_proba_path), artifact_path="oof")
 
 
 def main():

@@ -23,7 +23,7 @@ from src.ml.experiment_runner import ExperimentSpec, run_experiment
 from src.ml.mlflow_utils import setup_mlflow, end_active_run
 from src.utils.constants import (
     CAT_COLS, NUM_COLS, BOL_COLS, BIN_COLS,
-    RANDOM_STATE, TEST_SIZE
+    RANDOM_SEED, TEST_SIZE
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def get_models() -> dict[str, Any]:
     return {
-        "logreg": LogisticRegression(random_state=RANDOM_STATE),
+        "logreg": LogisticRegression(random_state=RANDOM_SEED),
     }
 
 def build_runner(model: object) -> SklearnPipelineRunner:
@@ -78,7 +78,7 @@ def train_and_track(models: dict[str, object] | None = None) -> None:
         models=models,
         build_runner=build_runner,
         parent_tags={"project": "churn", "task": "binary_classification"},
-        parent_params={"test_size": TEST_SIZE, "random_state": RANDOM_STATE},
+        parent_params={"test_size": TEST_SIZE, "random_state": RANDOM_SEED},
     )
 
     logger.info("Resumo:\n%s", df.to_string(index=False))

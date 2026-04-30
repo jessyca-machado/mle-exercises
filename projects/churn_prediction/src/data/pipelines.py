@@ -28,7 +28,7 @@ from src.utils.constants import (
     NUM_COLS,
     BOL_COLS,
     BIN_COLS,
-    RANDOM_STATE,
+    RANDOM_SEED,
 )
 
 # -----------------------------
@@ -44,7 +44,7 @@ class ChurnModelConfig:
         - predict_proba sempre retorna probabilidade
     """
     threshold: float = 0.05  # ajuste conforme seu cost_toolkit (best_thr do sweep)
-    random_state: int = RANDOM_STATE
+    random_state: int = RANDOM_SEED
 
 
 def build_preprocessor_from_df(df: pd.DataFrame) -> ColumnTransformer:

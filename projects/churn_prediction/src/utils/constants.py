@@ -7,8 +7,6 @@ URL: str  = (
         "IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
 )
 
-RANDOM_STATE: int = 42
-
 TEST_SIZE: int = 0.2
 
 TARGET_COL: str = "Churn"
