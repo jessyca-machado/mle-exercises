@@ -1,7 +1,12 @@
 from typing import Sequence, Optional
 import argparse
 
-from src.utils.constants import PRIMARY_METRIC, ALLOWED_METRICS
+from src.utils.constants import (
+    N_FOLDS, PRIMARY_METRIC,
+    ALLOWED_METRICS,
+    MLFLOW_EXPERIMENT_NAME,
+    MLFLOW_TRACKING_URI,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,6 +78,59 @@ def build_parser() -> argparse.ArgumentParser:
         default="best_cv_score",
         help="Nome da métrica no MLflow para o gate (default: best_cv_score).",
     )
+    parser.add_argument(
+        "--target-col",
+        default="Churn",
+        help="Nome da coluna target no dataset (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        default=MLFLOW_EXPERIMENT_NAME,
+        help="Nome do experimento no MLflow (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--model-name",
+        default="churn_xgb",
+        help="Nome do modelo no MLflow Model Registry (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--mlflow-tracking-uri",
+        default=MLFLOW_TRACKING_URI,
+        help="Tracking URI do MLflow (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--mlflow-registry-uri",
+        default=MLFLOW_TRACKING_URI,
+        help="Registry URI do MLflow (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--n-folds",
+        type=int,
+        default=N_FOLDS,
+        help="Número de folds para StratifiedKFold (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Seed para reprodutibilidade (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--primary-metric",
+        choices=["roc_auc", "average_precision", "f1", "recall", "precision", "accuracy"],
+        default="recall",
+        help="Métrica principal para selecionar o melhor run do RandomizedSearch (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--pyfunc-code-path",
+        default="src/ml/churn_pyfunc_xgb.py",
+        help="Caminho do arquivo pyfunc para logar o modelo end-to-end (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--pip-requirements",
+        default="requirements-mlflow.txt",
+        help="Arquivo (ou lista) de requirements para empacotar o modelo no MLflow (default: %(default)s).",
+    )
 
     return parser
 
@@ -81,8 +139,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     Faz o parsing dos argumentos de linha de comando (CLI) e aplica validações básicas.
 
     Esta função centraliza a definição dos parâmetros aceitos pelo script e converte
-    os valores para os tipos corretos, além de validar algumas
-    restrições que o ``argparse`` não cobre sozinho.
+    os valores para os tipos corretos, além de validar algumas restrições que o
+    `argparse` não cobre sozinho.
 
     Args:
         argv:

@@ -26,12 +26,46 @@ def setup_mlflow(default_experiment: str) -> None:
         pass
 
 
+def setup_mlflow_sqlite(
+    *,
+    tracking_uri: str,
+    experiment_name: str,
+    artifact_root: str,
+) -> None:
+    """
+    Configura MLflow para uso local com:
+        - backend store em SQLite (tracking_uri = "sqlite:///mlflow.db")
+        - artifact store em um diretório local controlado (artifact_root = "./mlartifacts")
+
+    Observação:
+    - `artifact_root` é usado apenas ao criar o experimento. Se o experimento já existir,
+        o MLflow mantém o artifact_location existente.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+
+    artifact_uri = Path(artifact_root).resolve().as_uri()
+    exp = mlflow.get_experiment_by_name(experiment_name)
+
+    if exp is None:
+        mlflow.create_experiment(
+            name=experiment_name,
+            artifact_location=artifact_uri,
+        )
+
+    mlflow.set_experiment(experiment_name)
+
+
 def end_active_run() -> None:
     if mlflow.active_run() is not None:
         mlflow.end_run()
 
 
 def _safe_log_params(logger, params: Dict[str, Any]) -> None:
+    """
+    Loga parâmetros garantindo:
+        - conversão para string
+        - não logar valores None (MLflow rejeita ou fica inconsistente)
+    """
     logger.debug("Logging param no MLflow (%d keys)", len(params or {}))
     for k, v in (params or {}).items():
         if v is None:
@@ -77,6 +111,9 @@ def _safe_log_metrics(logger, metrics: Dict[str, Any]) -> None:
 
 
 def _mlflow_set_tags(logger, tags: Dict[str, str]) -> None:
+    """
+    Configura tags no MLflow.
+    """
     logger.debug("Setting MLflow tags (%d keys)", len(tags or {}))
     for k, v in (tags or {}).items():
         try:
@@ -86,6 +123,9 @@ def _mlflow_set_tags(logger, tags: Dict[str, str]) -> None:
 
 
 def _cleanup_dir(logger, d: Path) -> None:
+    """
+    Remove um diretório temporário, logando falhas mas sem interromper o fluxo.
+    """
     try:
         if d.exists():
             shutil.rmtree(d)

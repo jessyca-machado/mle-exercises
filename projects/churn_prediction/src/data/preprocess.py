@@ -86,7 +86,6 @@ def impute_missing(
     Returns:
         Dataframe com a transformação final
     """
-    # Regra específica para TotalCharges. Os clientes que possuem a TotalCharges não fecharam o 1º mês de faturamento, então o valor será igual ao MonthlyCharges.
     if 'TotalCharges' in num_cols_null and 'TotalCharges' in df.columns:
         if 'MonthlyCharges' in df.columns:
             mask = df['TotalCharges'].isna()
@@ -111,6 +110,8 @@ def pre_processing(
     df: pd.DataFrame,
     yes_no_cols: list,
     stage_name: str,
+    verbose: bool = False,
+    head_n: int = 10,
 ) -> pd.DataFrame:
     """Carrega, pré-processa o dataset Telco Customer Churn da IBM e faz a transformação dos dados.
 
@@ -140,16 +141,22 @@ def pre_processing(
 
     df_clean = impute_missing(df_clean, cat_cols_null, num_cols_null, bool_cols_null)
 
-    logger.info("\n--- %s ---", stage_name)
-    logger.info("First 10 rows of df_clean:\n%s", df_clean.head(10).to_string(index=False))
-    
+    if verbose:
+            logger.info("\n--- %s ---", stage_name)
+            logger.info(
+                "df_clean shape=%s | nulls_total=%d",
+                df_clean.shape,
+                int(df_clean.isna().sum().sum()),
+            )
+            logger.info("First %d rows of df_clean:\n%s", head_n, df_clean.head(head_n).to_string(index=False))
+
     return df_clean
 
 
 def main() -> None:
     df = load_data_churn()
 
-    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features")
+    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features", verbose=True, head_n=10)
 
 
 if __name__ == "__main__":

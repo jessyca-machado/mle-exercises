@@ -16,7 +16,6 @@ from sklearn.metrics import (
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
 
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
@@ -101,8 +100,28 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray) 
     }
 
 
-def _present(cols, X):
-    return [c for c in cols if c in X.columns]
+def cat_selector(X: pd.DataFrame) -> list[str]:
+    """
+    Seleciona colunas categóricas presentes no DataFrame.
+    """
+    return [c for c in CAT_COLS if c in X.columns]
+
+
+def num_selector(X: pd.DataFrame) -> list[str]:
+    """
+    Seleciona colunas numéricas e binadas presentes no DataFrame, excluindo as categóricas.
+    """
+    scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in set(CAT_COLS)]
+    return [c for c in scaled_cols if c in X.columns]
+
+
+def bol_selector(X: pd.DataFrame) -> list[str]:
+    """
+    Seleciona colunas booleanas presentes no DataFrame, excluindo as categóricas e as numéricas/binadas.
+    """
+    scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in set(CAT_COLS)]
+    bol_cols = [c for c in BOL_COLS if c not in set(CAT_COLS) and c not in set(scaled_cols)]
+    return [c for c in bol_cols if c in X.columns]
 
 
 def build_preprocessor() -> ColumnTransformer:
@@ -117,20 +136,6 @@ def build_preprocessor() -> ColumnTransformer:
     Returns:
         Um `ColumnTransformer` configurado para preprocessar as colunas disponíveis.
     """
-    def cat_selector(X):
-        return _present(CAT_COLS, X)
-
-
-    def num_selector(X):
-        scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in CAT_COLS]
-        return _present(scaled_cols, X)
-
-
-    def bol_selector(X):
-        scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in CAT_COLS]
-        bol_cols = [c for c in BOL_COLS if c not in CAT_COLS and c not in scaled_cols]
-        return _present(bol_cols, X)
-
     return ColumnTransformer(
         transformers=[
             ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_selector),

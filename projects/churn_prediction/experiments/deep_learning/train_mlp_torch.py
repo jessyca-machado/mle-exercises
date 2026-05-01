@@ -116,7 +116,7 @@ def log_end_to_end_model(
     ts_path = artifacts_dir / "model_ts.pt"
     ts.save(str(ts_path))
 
-    code_path = Path("src/ml/churn_pyfunc.py").resolve()
+    code_path = Path("src/ml/churn_pyfunc_mlp.py").resolve()
     mlflow.pyfunc.log_model(
         name="model",
         python_model=str(code_path),
