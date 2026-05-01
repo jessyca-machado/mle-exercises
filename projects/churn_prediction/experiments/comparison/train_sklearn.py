@@ -25,7 +25,7 @@ from rich.table import Table
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
 from sklearn.base import clone
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_classif
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.svm import SVC
@@ -254,7 +254,8 @@ def run_randomsearch_for_model(
         steps=[
             ("feature_engineering", TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)),
             ("preprocess", build_preprocessor()),
-            ("select_kbest", SelectKBest(score_func=f_classif, k="all")),
+            ("drop_constant", VarianceThreshold(threshold=0.0)),
+            ("select_kbest", SelectKBest(score_func=mutual_info_classif, k="all")),
             ("model", estimator),
         ]
     )

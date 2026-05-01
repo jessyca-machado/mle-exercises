@@ -98,7 +98,7 @@ TRUSTED_TYPES = [
         "sklearn.preprocessing._encoders.OneHotEncoder",
         "sklearn.preprocessing._data.StandardScaler",
         "sklearn.feature_selection._univariate_selection.SelectKBest",
-        "sklearn.feature_selection._univariate_selection.f_classif",
+        "sklearn.feature_selection._mutual_info.mutual_info_classif",
         "src.ml.data_utils.bol_selector",
         "src.ml.data_utils.cat_selector",
         "src.ml.data_utils.num_selector",

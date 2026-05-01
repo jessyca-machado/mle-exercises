@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, clone
 from sklearn.compose import ColumnTransformer
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_classif
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 
@@ -31,7 +31,7 @@ class ChurnModelTrainer:
     Trainer para a previsão de churn, com:
         - Feature engineering: TelcoFeatureEngineeringBins
         - Preprocess: ColumnTransformer baseado em listas (CAT/NUM/BOL/BIN)
-        - (Opcional) seleção: SelectKBest(f_classif)
+        - (Opcional) seleção: SelectKBest(mutual_info_classif)
         - CV: StratifiedKFold
     Sem dependência de infraestrutura.
     """
@@ -70,11 +70,14 @@ class ChurnModelTrainer:
         self.X = X
         self.y = y.astype(int)
 
+        fe_kwargs = self.fe_kwargs or dict(monthlycharges_q=5, totalcharges_q=10)
+
         self.pipeline = Pipeline(
             steps=[
-                ("feature_engineering", TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)),
+                ("feature_engineering", TelcoFeatureEngineeringBins(**fe_kwargs)),
                 ("preprocess", clone(self.preprocessor_base)),
-                ("select_kbest", SelectKBest(score_func=f_classif, k=self.k_best)),
+                ("drop_constant", VarianceThreshold(threshold=0.0)),
+                ("select_kbest", SelectKBest(score_func=mutual_info_classif, k=self.k_best)),
                 ("model", model),
             ]
         )

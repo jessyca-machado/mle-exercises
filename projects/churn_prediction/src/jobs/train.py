@@ -48,6 +48,9 @@ from src.core.models.trainer import ChurnModelTrainer
 from src.entrypoints.cli import parse_args
 from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
+
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -94,7 +97,10 @@ def log_xgb_end_to_end_pyfunc(
     """
     fe = fitted_pipeline.named_steps["feature_engineering"]
     pre = fitted_pipeline.named_steps["preprocess"]
-    sel = fitted_pipeline.named_steps["select_kbest"]
+    sel = fitted_pipeline.named_steps.get("select_kbest", None)
+    if sel is None:
+        sel = FunctionTransformer(lambda x: x)
+
     est = fitted_pipeline.named_steps["model"]
 
     tmp = Path("mlflow_artifacts_tmp")
