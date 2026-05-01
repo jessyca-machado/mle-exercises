@@ -46,7 +46,6 @@ dev = [
     "nbformat>=4.2.0",
     "ruff>=0.12.10",
     "pre-commit>=4.3.0",
-    "pytest>=8.4.1",
 ]
 
 [build-system]
@@ -66,3 +65,15 @@ url = "https://pypi.org/simple"
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+addopts = "-q"
+markers = [
+    "integration: testes E2E/integracao (podem ser mais lentos)",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

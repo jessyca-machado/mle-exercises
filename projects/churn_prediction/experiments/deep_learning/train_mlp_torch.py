@@ -46,7 +46,7 @@ from src.utils.constants import (
 )
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, mutual_info_classif, VarianceThreshold
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
 from sklearn.base import BaseEstimator
 from src.ml.data_utils import compute_metrics, build_preprocessor
@@ -512,7 +512,8 @@ def make_prep_pipe(
     return Pipeline(steps=[
         ("feature_engineering", TelcoFeatureEngineeringBins(**fe_kwargs)),
         ("preprocess", clone(preprocessor_base)),
-        ("select_kbest", SelectKBest(score_func=f_classif, k=k_best)),
+        ("drop_constant", VarianceThreshold(threshold=0.0)),
+        ("select_kbest", SelectKBest(score_func=mutual_info_classif, k=k_best)),
     ])
 
 
@@ -700,7 +701,7 @@ def refit_final_mlp(
     preprocessor_final = clone(preprocessor_base)
     X_full_pp = preprocessor_final.fit_transform(X_full_fe).astype(np.float32)
 
-    selector_final = SelectKBest(score_func=f_classif, k=k_best)
+    selector_final = SelectKBest(score_func=mutual_info_classif, k=k_best)
     y_full = y.to_numpy(dtype=np.float32)
     X_full = selector_final.fit_transform(X_full_pp, y_full.astype(int)).astype(np.float32)
 
