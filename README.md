@@ -44,6 +44,8 @@
         │   │   ├── preprocess.py
         │   │   └── transformers.py
         │   ├── data_io.py
+        │   ├── entrypoints
+        │   │   └── cli.py
         │   ├── jobs
         │   │   ├── __init__.py
         │   │   └── train.py
@@ -66,6 +68,6 @@
         │       └── helpers.py
         └── uv.lock
 
-16 directories, 45 files
+17 directories, 46 files
 ```
 <!-- TREE:END -->
