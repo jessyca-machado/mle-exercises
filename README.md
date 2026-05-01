@@ -69,13 +69,17 @@
         │   │   ├── mlflow_utils.py
         │   │   └── persistence.py
         │   ├── principal.py
-        │   ├── tests.py
+        │   ├── tests
+        │   │   ├── __init__.py
+        │   │   ├── conftest.py
+        │   │   ├── integration
+        │   │   └── units
         │   └── utils
         │       ├── __init__.py
         │       ├── constants.py
         │       └── helpers.py
         └── uv.lock
 
-21 directories, 50 files
+24 directories, 51 files
 ```
 <!-- TREE:END -->
