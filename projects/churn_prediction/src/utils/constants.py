@@ -99,6 +99,11 @@ TRUSTED_TYPES = [
         "sklearn.preprocessing._data.StandardScaler",
         "sklearn.feature_selection._univariate_selection.SelectKBest",
         "sklearn.feature_selection._univariate_selection.f_classif",
+        "src.ml.data_utils.bol_selector",
+        "src.ml.data_utils.cat_selector",
+        "src.ml.data_utils.num_selector",
+        "xgboost.core.Booster",
+        "xgboost.sklearn.XGBClassifier",
 ]
 
 MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"

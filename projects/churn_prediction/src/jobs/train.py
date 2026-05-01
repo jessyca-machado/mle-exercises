@@ -1,7 +1,22 @@
-"""
-Treina e rastreia modelos de machine learning para previsão de churn.
-Este script carrega os dados, pré-processa, divide em treino e teste, e treina modelos especificados.
-Os resultados são rastreados usando MLflow, incluindo métricas e artefatos do modelo
+"""Treino — pipeline de treino para XGBoost + registro via MLflow PyFunc,
+utilizando hiperparâmetros provenientes do melhor run de RandomizedSearchCV no MLflow.
+
+Características:
+- Treina via ChurnModelTrainer.
+- Busca best params do XGB no MLflow (função `fetch_best_xgb_params_from_mlflow`).
+- Loga e registra um modelo END-TO-END como PyFunc (transformações + estimador).
+- Preparado para pytest (funções pequenas, dependências injetáveis).
+
+Pré-requisitos:
+- ChurnModelTrainer deve montar um pipeline com steps nomeados:
+    "feature_engineering", "preprocess", "select_kbest", "model".
+- Pyfunc compatível com XGB:
+    `src/ml/churn_pyfunc_xgb.py`, que espera artifacts:
+    - feature_engineering
+    - preprocessor
+    - selector
+    - estimator
+    e retorna DataFrame com coluna `y_pred_proba`.
 
 Uso:
     python src/jobs/train.py
@@ -11,77 +26,239 @@ Para visualizar:
 """
 from __future__ import annotations
 
-import logging
-import os
-from typing import Any
+from dataclasses import dataclass
+from datetime import datetime
+from logging import config
+from pathlib import Path
+from typing import Any, Optional, Union
 
-from sklearn.linear_model import LogisticRegression
+import mlflow
+import pandas as pd
+import pytz
+from src.ml.mlflow_utils import setup_mlflow_sqlite
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
+from src.utils.constants import FEATURES_COLS, N_FOLDS, RANDOM_SEED, TARGET_COL, YES_NO_COLS, PRIMARY_METRIC, MLFLOW_ARTIFACT_ROOT, MLFLOW_EXPERIMENT_NAME, MLFLOW_TRACKING_URI
+import skops.io as sio
+from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
+from xgboost import XGBClassifier
 
-from src.data.pipelines import SklearnPipelineRunner
-from src.ml.data_utils import load_and_split_churn
-from src.ml.experiment_runner import ExperimentSpec, run_experiment
-from src.ml.mlflow_utils import setup_mlflow, end_active_run
-from src.utils.constants import (
-    CAT_COLS, NUM_COLS, BOL_COLS, BIN_COLS,
-    RANDOM_SEED, TEST_SIZE
-)
+from src.core.models.trainer import ChurnModelTrainer
+from src.entrypoints.cli import parse_args
+from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
-def get_models() -> dict[str, Any]:
-    return {
-        "logreg": LogisticRegression(random_state=RANDOM_SEED),
-    }
+@dataclass(frozen=True)
+class TrainConfig:
+    experiment_name: str
+    registered_model_name: str
+    tracking_uri: str = MLFLOW_TRACKING_URI
+    registry_uri: str = MLFLOW_TRACKING_URI
+    timezone: str = "America/Sao_Paulo"
+    n_folds: int = N_FOLDS
+    random_seed: int = RANDOM_SEED
+    search_run_type_tag: str = "randomized"
+    primary_metric: str = PRIMARY_METRIC
+    params_prefix: str = "model__"
+    pyfunc_code_path: str = "src/ml/churn_pyfunc_xgb.py"
+    pip_requirements: Optional[Union[str, list[str]]] = "requirements-mlflow.txt"
 
-def build_runner(model: object) -> SklearnPipelineRunner:
-    num_cols = NUM_COLS + BOL_COLS  # mantenha sua regra aqui se for “do job”
-    return SklearnPipelineRunner(
-        model=model,
-        categorical_cols=CAT_COLS,
-        numerical_cols=num_cols,
-        boolean_cols=[],         # ou remova se seu runner nem precisa
-        binned_cols=BIN_COLS,    # se aplicável
-        use_feature_engineering=False,
-        feature_engineering_transformer=None,
-        use_feature_selection=False,
-        k_best=None,
-        use_grid_search=False,
-        param_grid={},
-        cv=5,
-        scoring="accuracy",
-        pos_label=1,
+
+def log_xgb_end_to_end_pyfunc(
+    *,
+    fitted_pipeline,
+    name: str,
+    pyfunc_code_path: str,
+    pip_requirements: Optional[Union[str, list[str]]],
+    input_example: pd.DataFrame,
+) -> str:
+    """
+    Loga o modelo como MLflow PyFunc com artifacts compatíveis com `src/ml/churn_pyfunc_xgb.py`.
+
+    Espera steps no pipeline:
+        - feature_engineering
+        - preprocess
+        - select_kbest
+        - model
+
+    Args:
+        fitted_pipeline: pipeline completo (com steps nomeados) treinado.
+        name: nome do modelo registrado no MLflow.
+        pyfunc_code_path: caminho para o código do pyfunc (ex: `src/ml/churn_pyfunc_xgb.py`).
+        pip_requirements: requisitos pip para o ambiente do pyfunc.
+        input_example: exemplo de DataFrame de features para inferir a assinatura.
+
+    Returns:
+        model_uri retornado pelo MLflow.
+    """
+    fe = fitted_pipeline.named_steps["feature_engineering"]
+    pre = fitted_pipeline.named_steps["preprocess"]
+    sel = fitted_pipeline.named_steps["select_kbest"]
+    est = fitted_pipeline.named_steps["model"]
+
+    tmp = Path("mlflow_artifacts_tmp")
+    tmp.mkdir(exist_ok=True)
+
+    fe_path = tmp / "feature_engineering.skops"
+    pre_path = tmp / "preprocessor.skops"
+    sel_path = tmp / "selector.skops"
+    est_path = tmp / "estimator.skops"
+
+    sio.dump(fe, fe_path)
+    sio.dump(pre, pre_path)
+    sio.dump(sel, sel_path)
+    sio.dump(est, est_path)
+
+    input_example = input_example.copy()
+    int_cols = input_example.select_dtypes(include=["int", "int32", "int64"]).columns
+    if len(int_cols) > 0:
+        input_example[int_cols] = input_example[int_cols].astype("float64")
+
+    y_example = fitted_pipeline.predict_proba(input_example)[:, 1]
+    output_example = pd.DataFrame({"y_pred_proba": y_example.astype(float)})
+
+    signature = infer_signature(input_example, output_example)
+
+    model_info = mlflow.pyfunc.log_model(
+        name=name,
+        python_model=str(Path(pyfunc_code_path).resolve()),
+        artifacts={
+            "feature_engineering": str(fe_path.resolve()),
+            "preprocessor": str(pre_path.resolve()),
+            "selector": str(sel_path.resolve()),
+            "estimator": str(est_path.resolve()),
+        },
+        pip_requirements=pip_requirements,
+        input_example=input_example,
+        signature=signature,
     )
 
-def train_and_track(models: dict[str, object] | None = None) -> None:
-    models = models or get_models()
+    return model_info.model_uri
 
-    setup_mlflow(default_experiment="churn-model-comparison")
-    end_active_run()
 
-    X_train, X_test, y_train, y_test = load_and_split_churn()
+def run_train_pipeline(
+    X: pd.DataFrame,
+    y: pd.Series,
+    config,
+    trainer: Optional[ChurnModelTrainer] = None,
+    client: Optional[MlflowClient] = None,
+) -> dict[str, Any]:
+    """
+    Treina o modelo final XGB usando o melhor resultado do RandomizedSearchCV no MLflow,
+    roda CV (via ChurnModelTrainer) e registra via MLflow PyFunc.
 
-    parent_run_name = os.getenv("MLFLOW_RUN_NAME", "compare_models")
+    Args:
+        X: DataFrame de features.
+        y: Series de target.
+        config: TrainConfig com configurações de treino e MLflow.
+        trainer: ChurnModelTrainer opcional (para injeção em testes).
+        client: MlflowClient opcional (para injeção em testes).
+    
+    Returns:
+        Dicionário com informações do run, modelo e melhores parâmetros.
+    """
+    setup_mlflow_sqlite(
+        tracking_uri=config.tracking_uri,
+        experiment_name=config.experiment_name,
+        artifact_root=MLFLOW_ARTIFACT_ROOT,
+    )
+    mlflow.set_tracking_uri(config.tracking_uri)
+    mlflow.set_registry_uri(config.registry_uri)
 
-    spec = ExperimentSpec(
-        parent_run_name=parent_run_name,
-        job_tag="train_churn_mlflow_job",
-        best_metric="accuracy",
-        log_model=True,
+    best = fetch_best_xgb_params_from_mlflow(
+        experiment_name=config.experiment_name,
+        tracking_uri=config.tracking_uri,
+        metric_key="best_cv_score",
+        search_type_value="randomized",
+        client=client,
     )
 
-    df = run_experiment(
-        logger=logger,
-        spec=spec,
-        X_train=X_train, y_train=y_train,
-        X_test=X_test, y_test=y_test,
-        models=models,
-        build_runner=build_runner,
-        parent_tags={"project": "churn", "task": "binary_classification"},
-        parent_params={"test_size": TEST_SIZE, "random_state": RANDOM_SEED},
+    estimator = XGBClassifier(
+        random_state=config.random_seed,
+        n_jobs=-1,
+        eval_metric="aucpr",
+        verbosity=0,
+        **best.xgb_params,
     )
 
-    logger.info("Resumo:\n%s", df.to_string(index=False))
+    trainer = trainer or ChurnModelTrainer(
+        n_folds=config.n_folds,
+        seed=config.random_seed,
+        k_best=best.select_kbest_k,
+    )
+    trainer.build(X=X, y=y, model=estimator)
+    cv_summary = trainer.train()
+
+    tz = pytz.timezone(config.timezone)
+    run_name = f"{datetime.now(tz).strftime('%Y%m%d%H%M%S')}__xgb__final_train"
+
+    with mlflow.start_run(run_name=run_name) as run:
+        mlflow.log_metrics({f"cv_mean_{k}": v for k, v in cv_summary.metrics_mean.items()})
+        mlflow.log_metrics({f"cv_std_{k}": v for k, v in cv_summary.metrics_std.items()})
+
+        mlflow.set_tag("run_type", "final_train")
+        mlflow.log_param("run_type", "final_train")
+        mlflow.log_param("model_family", "xgboost")
+        mlflow.log_param("cv_folds", config.n_folds)
+        mlflow.log_param("random_seed", config.random_seed)
+        mlflow.log_param("primary_metric", config.primary_metric)
+
+        mlflow.log_param("source_search_run_id", best.run_id)
+        mlflow.log_metric("source_search_best_cv_score", float(best.best_cv_score))
+        mlflow.log_param("source_search_metric_key", best.metric_key)
+
+        mlflow.log_param("select_kbest__k", str(best.select_kbest_k))
+        mlflow.log_params({f"{config.params_prefix}{k}": v for k, v in best.xgb_params.items()})
+
+        input_example = X.head(50).copy()
+        model_uri = log_xgb_end_to_end_pyfunc(
+            fitted_pipeline=cv_summary.fitted_pipeline,
+            name=config.registered_model_name,
+            pyfunc_code_path=config.pyfunc_code_path,
+            pip_requirements=config.pip_requirements,
+            input_example=input_example,
+        )
+
+        mlflow.register_model(model_uri=model_uri, name=config.registered_model_name)
+
+        return {
+            "run_id": run.info.run_id,
+            "run_name": run_name,
+            "model_uri": model_uri,
+            "registered_name": config.registered_model_name,
+            "best_params": best.xgb_params,
+            "k_best": best.select_kbest_k,
+            "source_search_run_id": best.run_id,
+            "source_search_best_cv_score": float(best.best_cv_score),
+            "cv_mean": cv_summary.metrics_mean,
+            "cv_std": cv_summary.metrics_std,
+        }
+
+
+def main() -> None:
+    args = parse_args()
+
+    df = load_data_churn()
+    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features", verbose=False)
+
+    y = df_clean[TARGET_COL].astype(int)
+    X = df_clean[FEATURES_COLS].copy()
+
+    cfg = TrainConfig(
+        experiment_name=args.experiment_name,
+        registered_model_name=args.model_name,
+        tracking_uri=args.mlflow_tracking_uri,
+        registry_uri=args.mlflow_registry_uri,
+        n_folds=args.n_folds,
+        random_seed=args.random_seed,
+        primary_metric=args.primary_metric,
+        pyfunc_code_path=args.pyfunc_code_path,
+        pip_requirements=args.pip_requirements,
+    )
+
+    run_train_pipeline(X=X, y=y, config=cfg)
+
 
 if __name__ == "__main__":
-    train_and_track()
+    main()
