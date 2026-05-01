@@ -10,4 +10,3 @@ class ToFloat32(BaseEstimator, TransformerMixin):
         if hasattr(X, "to_numpy"):
             X = X.to_numpy()
         return np.asarray(X, dtype=np.float32)
-

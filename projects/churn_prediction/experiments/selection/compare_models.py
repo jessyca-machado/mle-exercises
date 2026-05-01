@@ -36,13 +36,13 @@ from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
-    PRIMARY_METRIC,
     ALPHA,
 )
 from src.ml.mlflow_selection_utils import (
     get_latest_runs_with_mlp_from_refit,
     run_display_name,
 )
+from src.entrypoints.cli import parse_args
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -515,39 +515,7 @@ def get_gate_score_recall(
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 
-    parser = argparse.ArgumentParser(
-        description="Comparação estatística de modelos (Friedman diagnóstico + duelo final)"
-    )
-    parser.add_argument("--metric", default=PRIMARY_METRIC, help="Métrica para comparar (ex.: average_precision)")
-    parser.add_argument(
-        "--decision",
-        choices=["baseline_duel", "top2_duel"],
-        default="baseline_duel",
-        help="Regra de decisão: baseline_duel (top vs baseline) ou top2_duel (top1 vs top2).",
-    )
-    parser.add_argument("--baseline-run", default="logreg", help="Baseline (model_name), usado em baseline_duel")
-
-    parser.add_argument("--apply-gate", action="store_true", help="Aplicar gate técnico vs baseline (por média)")
-    parser.add_argument("--gate-rel", type=float, default=0.02, help="Ganho relativo mínimo vs baseline (média)")
-
-    parser.add_argument(
-        "--gate-best-cv-score",
-        type=float,
-        default=0.0,
-        help="Se >0, filtra runs cujo score de gate (best_cv_score/cv_mean_recall/recall por fold) >= este valor.",
-    )
-    parser.add_argument(
-        "--gate-metric-name",
-        default="best_cv_score",
-        help="Nome da métrica para gate. Se 'best_cv_score', usa fallback inteligente (inclui MLP).",
-    )
-
-    parser.add_argument("--register", action="store_true", help="Registrar campeão no MLflow Model Registry")
-    parser.add_argument("--registry-name", default="telco-churn-model", help="Nome do Registered Model")
-
-    parser.add_argument("--models", nargs="+", default=None, help="Lista de model_name para comparar (opcional)")
-
-    args = parser.parse_args()
+    args = parse_args()
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)

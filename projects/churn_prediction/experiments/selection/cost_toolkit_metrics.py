@@ -9,7 +9,7 @@ E que N_FOLDS é o mesmo para todos.
 
 Uso:
     # cálculo do trade off de custo normal, assumindo threshold=0.5:
-    python experiments/selection/cost_toolkit_metrics.py
+    python experiments/selection/cost_toolkit_metrics.py --metric net_value
 
     # cálculo do trade off de custo somente para os modelos com recall de treino >= 0.8,
     # buscando o threshold que maximize o valor líquido:
@@ -22,7 +22,6 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
-import argparse
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -45,6 +44,7 @@ from src.ml.mlflow_selection_utils import (
     has_any_oof,
 )
 from src.ml.cost_utils import CostSpec, sweep_thresholds_cost
+from src.entrypoints.cli import parse_args
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -372,58 +372,7 @@ def get_run_metric_value(run: Any, metric_name: str) -> Optional[float]:
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--threshold", type=float, default=0.5, help="Threshold para avaliar net_value/roi")
-    parser.add_argument("--topk", type=float, default=0.0, help="Se >0, avalia tratando topk% da base")
-    parser.add_argument(
-        "--sweep-thresholds",
-        nargs=3,
-        type=float,
-        default=None,
-        metavar=("START", "END", "STEP"),
-        help="Varre thresholds e escolhe o melhor net_value médio por modelo",
-    )
-    parser.add_argument("--benefit-tp", type=float, default=10.0)
-    parser.add_argument("--cost-fp", type=float, default=1.0)
-    parser.add_argument("--cost-fn", type=float, default=5.0)
-    parser.add_argument(
-        "--roi-on-zero-cost",
-        choices=["nan", "inf", "zero"],
-        default="nan",
-        help="Como tratar ROI quando total_cost=0 (default: nan)",
-    )
-    parser.add_argument(
-        "--metric",
-        choices=["net_value", "roi"],
-        default="net_value",
-        help="Métrica de negócio usada para ranquear os modelos (default: net_value).",
-    )
-    parser.add_argument(
-        "--business-tag",
-        default="",
-        help="Tag opcional para diferenciar execuções (ex.: 'v1', 'topk10'). Entra no nome das métricas no parent run.",
-    )
-    parser.add_argument(
-        "--log-mlflow",
-        action="store_true",
-        help=(
-            "Cria um NESTED RUN 'business_eval' dentro de cada run de modelo e loga "
-            "params + net_value/roi por fold. No PARENT run, loga somente métricas "
-            "com namespace para evitar conflitos."
-        ),
-    )
-    parser.add_argument(
-        "--gate-best-cv-score",
-        type=float,
-        default=0.0,
-        help="Se >0, filtra runs com best_cv_score (do GridSearch/RandomSearch) >= esse valor.",
-    )
-    parser.add_argument(
-        "--gate-metric-name",
-        default="best_cv_score",
-        help="Nome da métrica no MLflow para o gate (default: best_cv_score).",
-    )
-    args = parser.parse_args()
+    args = parse_args()
 
     scenario = BusinessScenario(benefit_tp=args.benefit_tp, cost_fp=args.cost_fp, cost_fn=args.cost_fn)
 

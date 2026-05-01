@@ -244,3 +244,5 @@ N_ITER_BY_MODEL = {
         "dummy_most_frequent": 1,
         "dummy_stratified": 1,
 }
+
+ALLOWED_METRICS = [PRIMARY_METRIC, "net_value", "roi"]
