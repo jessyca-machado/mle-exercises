@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Sequence, Tuple
 import pandas as pd
+import numpy as np
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -13,6 +15,8 @@ from sklearn.metrics import (
 )
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
 
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
@@ -28,11 +32,27 @@ from src.utils.constants import (
     NUM_COLS
 )
 
+
+@dataclass
+class ExistingColumnsSelector(BaseEstimator, TransformerMixin):
+    """
+    Seleciona, no fit, a interseção entre uma lista desejada e as colunas
+    presentes no DataFrame. No transform, retorna apenas essas colunas (na mesma ordem).
+    """
+    columns: Sequence[str]
+
+    def fit(self, X: pd.DataFrame, y=None):
+        if not hasattr(X, "columns"):
+            raise TypeError("ExistingColumnsSelector espera um pandas DataFrame como X.")
+        self.columns_ = [c for c in self.columns if c in X.columns]
+        return self
+
+    def transform(self, X: pd.DataFrame):
+        return X.loc[:, self.columns_]
+
+
 def load_and_split_churn() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """Carrega os dados de churn, realiza o pré-processamento e divide em conjuntos de treino e teste.
-    
-    Args:
-        None
     
     Returns:
         X_train, X_test, y_train, y_test
@@ -81,38 +101,41 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray) 
     }
 
 
-def build_preprocessor_from_df(df: pd.DataFrame) -> ColumnTransformer:
+def _present(cols, X):
+    return [c for c in cols if c in X.columns]
+
+
+def build_preprocessor() -> ColumnTransformer:
     """
-    Constrói um `ColumnTransformer` a partir das colunas presentes no DataFrame já após
-    o feature engineering.
+    Constrói um `ColumnTransformer` a partir das colunas presentes no DataFrame.
 
     As colunas são separadas em grupos:
     - categóricas: OneHotEncoder
     - numéricas (+ BIN_COLS): StandardScaler
     - booleanas: passthrough
 
-    Args:
-        df: DataFrame contendo as colunas de entrada. A função utiliza esse DataFrame
-        apenas para verificar quais colunas de `CAT_COLS`, `NUM_COLS`, `BOL_COLS` e `BIN_COLS`
-        existem de fato.
-
     Returns:
         Um `ColumnTransformer` configurado para preprocessar as colunas disponíveis.
     """
-    cat = [c for c in CAT_COLS if c in df.columns]
-    num = [c for c in NUM_COLS if c in df.columns]
-    bol = [c for c in BOL_COLS if c in df.columns]
-    bin_cols = [c for c in BIN_COLS if c in df.columns]
+    def cat_selector(X):
+        return _present(CAT_COLS, X)
 
-    scaled_cols = num + bin_cols
-    num = [c for c in scaled_cols if c not in cat]
-    bol = [c for c in bol if c not in cat and c not in num]
+
+    def num_selector(X):
+        scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in CAT_COLS]
+        return _present(scaled_cols, X)
+
+
+    def bol_selector(X):
+        scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in CAT_COLS]
+        bol_cols = [c for c in BOL_COLS if c not in CAT_COLS and c not in scaled_cols]
+        return _present(bol_cols, X)
 
     return ColumnTransformer(
         transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat),
-            ("num", StandardScaler(), num),
-            ("bol", "passthrough", bol),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_selector),
+            ("num", StandardScaler(), num_selector),
+            ("bol", "passthrough", bol_selector),
         ],
         remainder="drop",
         verbose_feature_names_out=False,

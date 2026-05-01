@@ -49,7 +49,7 @@ from src.data.preprocess import pre_processing
 from sklearn.feature_selection import SelectKBest, f_classif
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
 from sklearn.base import BaseEstimator
-from src.ml.data_utils import compute_metrics, build_preprocessor_from_df
+from src.ml.data_utils import compute_metrics, build_preprocessor
 
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.compose import ColumnTransformer
@@ -797,9 +797,7 @@ def main():
     y = df_clean[TARGET_COL].astype(int)
     X_df = df_clean[FEATURES_COLS].copy()
 
-    fe_example = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
-    X_example_fe = fe_example.fit_transform(X_df.head(200).copy())
-    preprocessor_base = build_preprocessor_from_df(X_example_fe)
+    preprocessor_base = build_preprocessor()
 
     splits = get_cv_splits(X_df, y, N_FOLDS, RANDOM_SEED)
 

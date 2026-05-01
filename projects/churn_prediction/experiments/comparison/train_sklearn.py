@@ -49,7 +49,7 @@ from src.utils.constants import (
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
-from src.ml.data_utils import compute_metrics, build_preprocessor_from_df
+from src.ml.data_utils import compute_metrics, build_preprocessor
 
 
 logger = logging.getLogger(__name__)
@@ -250,14 +250,10 @@ def run_randomsearch_for_model(
             - best_cv_score
             - best_params
     """
-    fe_example = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
-    X_example_fe = fe_example.fit_transform(X_df.head(200).copy())
-    preprocessor = build_preprocessor_from_df(X_example_fe)
-
     pipe = Pipeline(
         steps=[
             ("feature_engineering", TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)),
-            ("preprocess", preprocessor),
+            ("preprocess", build_preprocessor()),
             ("select_kbest", SelectKBest(score_func=f_classif, k="all")),
             ("model", estimator),
         ]
