@@ -36,6 +36,9 @@
         ├── requirements.txt
         ├── src
         │   ├── __init__.py
+        │   ├── core
+        │   │   ├── __init__.py
+        │   │   └── models
         │   ├── data
         │   │   ├── __init__.py
         │   │   ├── feature_engineering.py
@@ -69,6 +72,6 @@
         │       └── helpers.py
         └── uv.lock
 
-17 directories, 47 files
+19 directories, 48 files
 ```
 <!-- TREE:END -->
