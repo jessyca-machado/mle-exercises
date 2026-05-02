@@ -69,17 +69,28 @@
         │   │   ├── mlflow_utils.py
         │   │   └── persistence.py
         │   ├── principal.py
-        │   ├── tests
-        │   │   ├── __init__.py
-        │   │   ├── conftest.py
-        │   │   ├── integration
-        │   │   └── units
         │   └── utils
         │       ├── __init__.py
         │       ├── constants.py
         │       └── helpers.py
+        ├── tests
+        │   ├── __init__.py
+        │   ├── conftest.py
+        │   ├── integration
+        │   │   ├── __init__.py
+        │   │   ├── test_e2e.py
+        │   │   └── test_mlflow_logging.py
+        │   └── units
+        │       ├── __init__.py
+        │       ├── test_load_data.py
+        │       ├── test_mlflow_fetch_best_params.py
+        │       ├── test_preprocessing.py
+        │       ├── test_preprocessor_sanity.py
+        │       ├── test_pyfunc_contract_unit.py
+        │       ├── test_trainer_pipeline.py
+        │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-24 directories, 51 files
+24 directories, 62 files
 ```
 <!-- TREE:END -->
