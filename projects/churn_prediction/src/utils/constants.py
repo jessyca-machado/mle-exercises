@@ -1,21 +1,38 @@
+"""
+Constantes e configuração do projeto.
+
+Seções:
+- Dataset / split
+- Colunas (raw / features / tipos)
+- MLflow (tracking/experiment/artifacts)
+- Métricas e seleção
+- Busca de hiperparâmetros (RandomizedSearchCV)
+- Segurança skops (TRUSTED_TYPES)
+
+Observação:
+        - Se alterar pipeline/artifacts do PyFunc, atualizar TRUSTED_TYPES.
+        - Se alterar feature engineering, atualizar listas de colunas (NUM/CAT/BOL/BIN).
+"""
 from pathlib import Path
 from typing import Dict, Union, List, Any
 from scipy.stats import randint, uniform, loguniform
 
+
+# Dataset
 URL: str  = (
         "https://raw.githubusercontent.com/"
         "IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
 )
 
-TEST_SIZE: int = 0.2
+TEST_SIZE: float = 0.2
 
-TARGET_COL: str = "Churn"
-
+# Treino / validação
 RANDOM_SEED: int = 42
-
 N_FOLDS: int = 10
-
 ALPHA: float = 0.05
+
+# Colunas base (input do modelo)
+TARGET_COL: str = "Churn"
 
 FEATURES_COLS: list[str] = [
         "SeniorCitizen",
@@ -47,6 +64,7 @@ YES_NO_COLS: list[str] = [
         "Churn",
 ]
 
+# Colunas pós Feature Engineering (para preprocess)
 CAT_COLS: list[str] = [
         "gender",
         "InternetService",
@@ -92,34 +110,45 @@ BIN_COLS: list[str] = [
         "TotalCharges_group",
 ]
 
-TRUSTED_TYPES = [
+# Segurança: skops (allowlist)
+TRUSTED_TYPES: list[str] = [
+        # feature engineering
         "src.data.feature_engineering.TelcoFeatureEngineeringBins",
+        # preprocess
         "sklearn.compose._column_transformer.ColumnTransformer",
         "sklearn.preprocessing._encoders.OneHotEncoder",
         "sklearn.preprocessing._data.StandardScaler",
-        "sklearn.feature_selection._univariate_selection.SelectKBest",
-        "sklearn.feature_selection._mutual_info.mutual_info_classif",
+        "sklearn.pipeline.Pipeline",
+        "sklearn.impute._base.SimpleImputer",
+        "numpy.dtype",
+        # selectors (callables em build_preprocessor)
         "src.ml.data_utils.bol_selector",
         "src.ml.data_utils.cat_selector",
         "src.ml.data_utils.num_selector",
+        # feature selection
+        "sklearn.feature_selection._univariate_selection.SelectKBest",
+        "sklearn.feature_selection._mutual_info.mutual_info_classif",
+        "sklearn.feature_selection._variance_threshold.VarianceThreshold",
+        # estimadores
         "xgboost.core.Booster",
         "xgboost.sklearn.XGBClassifier",
 ]
 
+# MLflow
 MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"
-
 MLFLOW_EXPERIMENT_NAME: str = "churn-model-comparison"
-
 MLFLOW_ARTIFACT_ROOT: str = "./mlartifacts"
 
-PROJECT_ROOT = Path(__file__).parent.parent
+# Paths do projeto
+PROJECT_ROOT: Path = Path(__file__).parent.parent
+DATA_DIR: Path = PROJECT_ROOT / "data"
 
-DATA_DIR = PROJECT_ROOT / "data"
+# Métricas
+METRICS: list[str] = ["accuracy", "precision", "recall", "f1", "roc_auc", "average_precision"]
+PRIMARY_METRIC: str = "recall"
+ALLOWED_METRICS = list(dict.fromkeys([PRIMARY_METRIC, "net_value", "roi"]))
 
-METRICS = ["accuracy", "precision", "recall", "f1", "roc_auc", "average_precision"]
-
-PRIMARY_METRIC = "recall"
-
+# Deep Learning (grid manual)
 MLP_GRID = [
         {
                 "hidden_layers": [64, 32],
@@ -177,6 +206,7 @@ MLP_GRID = [
         },
 ]
 
+# RandomizedSearchCV
 GridSpec = Union[Dict[str, Any], List[Dict[str, Any]]]
 
 PARAM_DISTS: Dict[str, GridSpec] = {
@@ -239,7 +269,7 @@ PARAM_DISTS: Dict[str, GridSpec] = {
         },
 }
 
-N_ITER_BY_MODEL = {
+N_ITER_BY_MODEL: Dict[str, int] = {
         "DecisionTree": 80,
         "RandomForest": 120,
         "GradientBoosting": 120,
@@ -249,5 +279,3 @@ N_ITER_BY_MODEL = {
         "dummy_most_frequent": 1,
         "dummy_stratified": 1,
 }
-
-ALLOWED_METRICS = [PRIMARY_METRIC, "net_value", "roi"]

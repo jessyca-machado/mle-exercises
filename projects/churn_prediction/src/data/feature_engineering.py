@@ -6,7 +6,6 @@
 Uso:
     python src/data/feature_engineering.py
 """
-import logging
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -70,6 +69,21 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
             edges = np.array([v - 1.0, v + 1.0], dtype=float)
 
         return edges
+    
+    def _impute_totalcharges(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Regra de imputação consistente entre treino e inferência API:
+        - converte TotalCharges para numérico
+        - se TotalCharges é NaN e MonthlyCharges existe, usa MonthlyCharges
+        """
+        df = df.copy()
+        df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
+        if "MonthlyCharges" in df.columns:
+            df["MonthlyCharges"] = pd.to_numeric(df["MonthlyCharges"], errors="coerce")
+            mask = df["TotalCharges"].isna()
+            df.loc[mask, "TotalCharges"] = df.loc[mask, "MonthlyCharges"]
+        return df
+
 
     def fit(self, X: pd.DataFrame, y=None):
         """
@@ -87,10 +101,12 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         if "MonthlyCharges" not in X.columns or "TotalCharges" not in X.columns:
             raise ValueError("Esperado colunas MonthlyCharges e TotalCharges no DataFrame.")
 
+        X = self._impute_totalcharges(X)
+
         self.monthly_edges_ = self._quantile_edges(X["MonthlyCharges"], self.monthlycharges_q)
         self.total_edges_ = self._quantile_edges(X["TotalCharges"], self.totalcharges_q)
-
         return self
+
 
     def _apply_bins(self, s: pd.Series, edges: np.ndarray):
         """
@@ -127,6 +143,8 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
             raise RuntimeError("Transformer não foi fitado. Chame fit antes de transform.")
 
         df = X.copy()
+
+        df["tenure"] = pd.to_numeric(df["tenure"], errors="coerce")
 
         eps = self.epsilon
         df["TotalChargesPerMonth"] = pd.to_numeric(df["TotalCharges"], errors="coerce") / (
