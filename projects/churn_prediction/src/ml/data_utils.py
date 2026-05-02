@@ -1,3 +1,6 @@
+"""
+Utilitários para carregamento, pré-processamento e avaliação de dados de churn.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence, Tuple
@@ -16,6 +19,8 @@ from sklearn.metrics import (
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
@@ -136,11 +141,32 @@ def build_preprocessor() -> ColumnTransformer:
     Returns:
         Um `ColumnTransformer` configurado para preprocessar as colunas disponíveis.
     """
+    cat_pipe = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("ohe", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]
+    )
+
+    num_pipe = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+
+    bol_pipe = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("passthrough", "passthrough"),
+        ]
+    )
+
     return ColumnTransformer(
         transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_selector),
-            ("num", StandardScaler(), num_selector),
-            ("bol", "passthrough", bol_selector),
+            ("cat", cat_pipe, cat_selector),
+            ("num", num_pipe, num_selector),
+            ("bol", bol_pipe, bol_selector),
         ],
         remainder="drop",
         verbose_feature_names_out=False,

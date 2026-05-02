@@ -15,7 +15,7 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn>=0.23",
     "pandas>=2.2",
-    "numpy>=1.26,>2.0",
+    "numpy>=2.0",
     "plotly>=6.6.0",
     "optuna>=3.6",            # ou a versão que você estiver usando
     "optuna-integration>=3.6",
@@ -33,9 +33,7 @@ dependencies = [
     "pyasn1>=0.6.2",
     "sqlparse>=0.5.4",
     "rich>=15.0.0",
-    "catboost>=1.2.10",
     "xgboost>=3.2.0",
-    "lightgbm>=4.6.0",
     "scikit-posthocs>=0.12.0",
     "scipy>=1.17.1",
 ]
@@ -46,6 +44,9 @@ dev = [
     "nbformat>=4.2.0",
     "ruff>=0.12.10",
     "pre-commit>=4.3.0",
+    "pytest>=9.0.3",
+    "httpx>=0.28.1",
+    "python-json-logger>=4.1.0",
 ]
 
 [build-system]
@@ -71,9 +72,4 @@ testpaths = ["src/tests"]
 addopts = "-q"
 markers = [
     "integration: testes E2E/integracao (podem ser mais lentos)",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=9.0.3",
 ]

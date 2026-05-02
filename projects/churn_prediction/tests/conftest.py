@@ -5,7 +5,7 @@ import pytest
 from src.utils.constants import YES_NO_COLS, TARGET_COL, FEATURES_COLS
 from src.data.preprocess import pre_processing
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def raw_df() -> pd.DataFrame:
     """
     Cria um DataFrame sintético de churn, baseado no dataset original, aplicando um pouco de ruído.
@@ -55,14 +55,14 @@ def raw_df() -> pd.DataFrame:
     df = df.drop(columns=["_rep"])
     return df
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def df_clean(raw_df):
     """
     Aplica o pré-processamento do projeto no DataFrame sintético, para ser usado nos testes.
     """
     return pre_processing(raw_df, YES_NO_COLS, "test", verbose=False)
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def X_y(df_clean):
     """
     Seleciona as colunas de features e target do DataFrame pré-processado, para ser usado nos testes.
@@ -71,7 +71,7 @@ def X_y(df_clean):
     y = df_clean[TARGET_COL].astype(int)
     return X, y
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def X_example(df_clean):
     """
     Cria uma amostra do DataFrame de features para ser usada nos testes.
