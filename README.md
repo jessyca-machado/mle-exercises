@@ -34,8 +34,14 @@
         ├── pyproject.toml
         ├── requirements-mlflow.txt
         ├── requirements.txt
+        ├── scripts
+        │   ├── __init__.py
+        │   └── run_api.sh
         ├── src
         │   ├── __init__.py
+        │   ├── api
+        │   │   ├── __init__.py
+        │   │   └── app.py
         │   ├── core
         │   │   ├── __init__.py
         │   │   └── models
@@ -78,6 +84,7 @@
         │   ├── conftest.py
         │   ├── integration
         │   │   ├── __init__.py
+        │   │   ├── test_api.py
         │   │   ├── test_e2e.py
         │   │   └── test_mlflow_logging.py
         │   └── units
@@ -91,6 +98,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-24 directories, 62 files
+26 directories, 67 files
 ```
 <!-- TREE:END -->
