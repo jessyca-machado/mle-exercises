@@ -15,6 +15,7 @@
 └── projects
     ├── README.md
     └── churn_prediction
+        ├── .pre-commit-config.yaml
         ├── README.md
         ├── experiments
         │   ├── __init__.py
@@ -95,6 +96,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-26 directories, 64 files
+26 directories, 65 files
 ```
 <!-- TREE:END -->
