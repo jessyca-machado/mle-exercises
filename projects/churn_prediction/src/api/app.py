@@ -50,7 +50,7 @@ from src.jobs.predict import (
 
 try:
     from pythonjsonlogger.json import JsonFormatter
-except Exception:  # pragma: no cover
+except Exception:
     JsonFormatter = None
 
 logger = logging.getLogger("churn_api")
@@ -150,6 +150,24 @@ def validate_required_numeric(X: pd.DataFrame, required_num: list[str] = REQUIRE
         raise HTTPException(status_code=422, detail="Campos numéricos inválidos.")
 
 
+DROP_MODEL_COLS = {"customer_id"}
+
+
+def normalize_customer_id(customer_id: str) -> str:
+    # protege contra payloads do tipo "'12345'" ou '"12345"'
+    return customer_id.strip().strip('"').strip("'")
+
+
+def to_model_df(payload: dict) -> pd.DataFrame:
+    data = {k: v for k, v in payload.items() if k not in DROP_MODEL_COLS}
+    return pd.DataFrame([data])
+
+
+def to_model_df_batch(payloads: list[dict]) -> pd.DataFrame:
+    data = [{k: v for k, v in p.items() if k not in DROP_MODEL_COLS} for p in payloads]
+    return pd.DataFrame(data)
+
+
 def get_default_threshold() -> float:
     return float(os.getenv("CHURN_THRESHOLD", "0.5"))
 
@@ -211,6 +229,7 @@ app.add_middleware(LatencyLoggingMiddleware)
 class ChurnPredictRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    customer_id: str
     gender: str
     SeniorCitizen: float = Field(..., ge=0.0, le=1.0)
     Partner: float = Field(..., ge=0.0, le=1.0)
@@ -278,7 +297,9 @@ def predict(request: ChurnPredictRequest, threshold: Optional[float] = None) -> 
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(threshold) if threshold is not None else default_th
 
-    X = pd.DataFrame([request.model_dump()])
+    customer_id = normalize_customer_id(request.customer_id)
+
+    X = to_model_df(request.model_dump())
     X = coerce_numeric(X)
     validate_required_numeric(X)
 
@@ -319,7 +340,9 @@ def predict_batch(payload: ChurnBatchPredictRequest) -> ChurnBatchPredictRespons
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(payload.threshold) if payload.threshold is not None else default_th
 
-    X = pd.DataFrame([item.model_dump() for item in payload.items])
+    customer_ids = [normalize_customer_id(item.customer_id) for item in payload.items]
+
+    X = to_model_df_batch([item.model_dump() for item in payload.items])
     X = coerce_numeric(X)
     validate_required_numeric(X)
 
