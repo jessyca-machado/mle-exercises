@@ -99,6 +99,7 @@ def _valid_payload(**overrides) -> dict:
         Dicionário com o payload.
     """
     base = {
+        "customer_id": "12345",
         "gender": "Female",
         "SeniorCitizen": 0,
         "Partner": 1,
