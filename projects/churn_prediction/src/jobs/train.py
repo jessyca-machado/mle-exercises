@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from logging import config
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -38,7 +37,15 @@ import pytz
 from src.ml.mlflow_utils import setup_mlflow_sqlite
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
-from src.utils.constants import FEATURES_COLS, N_FOLDS, RANDOM_SEED, TARGET_COL, YES_NO_COLS, PRIMARY_METRIC, MLFLOW_ARTIFACT_ROOT, MLFLOW_EXPERIMENT_NAME, MLFLOW_TRACKING_URI
+from src.utils.constants import (
+    FEATURES_COLS,
+    N_FOLDS, RANDOM_SEED,
+    TARGET_COL, YES_NO_COLS,
+    PRIMARY_METRIC,
+    MLFLOW_ARTIFACT_ROOT,
+    MLFLOW_TRACKING_URI
+)
+
 import skops.io as sio
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
@@ -48,7 +55,6 @@ from src.core.models.trainer import ChurnModelTrainer
 from src.entrypoints.cli import parse_args
 from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 
-from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
 
@@ -164,6 +170,8 @@ def run_train_pipeline(
     Returns:
         Dicionário com informações do run, modelo e melhores parâmetros.
     """
+    from logging import config
+    
     setup_mlflow_sqlite(
         tracking_uri=config.tracking_uri,
         experiment_name=config.experiment_name,

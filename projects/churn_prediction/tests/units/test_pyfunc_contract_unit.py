@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
-from sklearn.pipeline import Pipeline
 
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
 from src.ml.data_utils import build_preprocessor

@@ -9,7 +9,6 @@ Uso:
 
 """
 import logging
-from statistics import median
 import pandas as pd
 import numpy as np
 
@@ -157,6 +156,8 @@ def main() -> None:
     df = load_data_churn()
 
     df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features", verbose=True, head_n=10)
+
+    logger.info("First %d rows of df_clean:\n%s", df_clean.shape[0], df_clean.head())
 
 
 if __name__ == "__main__":
