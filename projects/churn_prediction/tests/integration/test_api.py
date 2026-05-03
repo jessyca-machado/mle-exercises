@@ -51,7 +51,7 @@ def _train_and_register_pyfunc_model(X, y, request, registered_name: str) -> str
     root = request.config.rootpath
     pyfunc_path = (root / "src" / "ml" / "churn_pyfunc_xgb.py").resolve()
     assert pyfunc_path.exists()
-    with mlflow.start_run(run_name="api-hermetic-train") as run:
+    with mlflow.start_run(run_name="api-hermetic-train"):
         input_example = X.head(50).copy()
         # evita enforcement chato do MLflow (ints -> float)
         int_cols = input_example.select_dtypes(include=["int", "int32", "int64"]).columns

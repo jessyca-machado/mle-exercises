@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import mlflow
-from mlflow.tracking import MlflowClient
 
 from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 

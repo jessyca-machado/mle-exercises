@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-import shutil
 from pathlib import Path
 from typing import Any, Dict
 
@@ -120,15 +119,3 @@ def _mlflow_set_tags(logger, tags: Dict[str, str]) -> None:
             mlflow.set_tag(k, v)
         except Exception as e:
             logger.warning("Falha ao setar tag '%s': %s", k, e)
-
-
-def _cleanup_dir(logger, d: Path) -> None:
-    """
-    Remove um diretório temporário, logando falhas mas sem interromper o fluxo.
-    """
-    try:
-        if d.exists():
-            shutil.rmtree(d)
-            logger.debug("Diretório temporário removido: %s", d)
-    except Exception as e:
-        logger.warning("Falha ao limpar diretório temporário %s: %s", d, e)

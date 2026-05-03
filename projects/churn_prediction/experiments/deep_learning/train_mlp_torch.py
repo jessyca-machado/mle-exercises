@@ -415,8 +415,6 @@ def train_config_cv(
         y_train = y.iloc[train_idx].to_numpy(dtype=np.float32)
         y_test = y.iloc[test_idx].to_numpy(dtype=np.float32)
 
-        preprocessor_fold = clone(preprocessor_base)
-
         prep_pipe = make_prep_pipe(preprocessor_base, k_best)
         X_train_sel = prep_pipe.fit_transform(X_train_df, y_train.astype(int)).astype(np.float32)
         X_test_sel = prep_pipe.transform(X_test_df).astype(np.float32)
@@ -640,7 +638,8 @@ def log_cv_oof_to_mlflow(cv_summary: dict[str, Any], run_prefix: str = "") -> No
         cv_summary: Resumo no formato retornado por `run_cv_mlp`.
         run_prefix: Prefixo opcional para namespacing de métricas agregadas.
     """
-    tmp_dir = Path("mlflow_artifacts_tmp"); tmp_dir.mkdir(exist_ok=True)
+    tmp_dir = Path("mlflow_artifacts_tmp")
+    tmp_dir.mkdir(exist_ok=True)
 
     for m, v in cv_summary["cv_mean"].items():
         mlflow.log_metric(f"{run_prefix}cv_mean_{m}", float(v))
@@ -832,7 +831,7 @@ def main():
             summary = train_config_cv(params, run_name, X_df, y, splits, preprocessor_base)
             results.append({"run_name": run_name, **summary})
 
-            with mlflow.start_run(run_name=run_name) as run:
+            with mlflow.start_run(run_name=run_name):
                 mlflow.log_param("model_name", "mlp")
                 mlflow.log_param("config_name", run_name)
                 mlflow.log_param("search_type", "manual_grid_run_per_config")
@@ -884,7 +883,7 @@ def main():
     cv_df.to_csv(cv_path, index=False)
 
     console.rule("[bold cyan]MLflow — refit final + log do modelo campeão[/bold cyan]")
-    with mlflow.start_run(run_name="mlp_best_refit_and_model") as run:
+    with mlflow.start_run(run_name="mlp_best_refit_and_model"):
         mlflow.log_param("model_name", "mlp")
         mlflow.log_param("search_type", "manual_grid_best_refit")
         mlflow.log_param("best_config_name", best["run_name"])

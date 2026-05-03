@@ -13,11 +13,9 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
-import argparse
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Mapping
 from pathlib import Path
-import pandas as pd
 
 import mlflow
 import numpy as np
@@ -27,7 +25,6 @@ from rich.panel import Panel
 from rich.table import Table
 from scipy import stats
 
-from typing import Any, Mapping
 from mlflow.tracking import MlflowClient
 from mlflow.entities import Run
 from mlflow.entities.model_registry import ModelVersion
@@ -523,7 +520,7 @@ def main():
 
     metric = args.metric
 
-    with mlflow.start_run(run_name=f"model_selection__{metric}") as sel_run:
+    with mlflow.start_run(run_name=f"model_selection__{metric}"):
         mlflow.set_tag("run_stage", "selection")
         mlflow.log_param("metric", metric)
         mlflow.log_param("alpha", ALPHA)

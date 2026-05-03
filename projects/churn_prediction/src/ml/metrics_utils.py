@@ -35,7 +35,12 @@ def save_confusion_matrix_artifacts(
     cm = confusion_matrix(y_true, y_pred, labels=list(labels), normalize=normalize)
 
     csv_path = out_dir / f"{prefix}.csv"
-    pd.DataFrame(cm, index=[f"true_{l}" for l in labels], columns=[f"pred_{l}" for l in labels]).to_csv(csv_path)
+    df = pd.DataFrame(
+        cm,
+        index=[f"true_{label}" for label in labels],
+        columns=[f"pred_{label}" for label in labels],
+    )
+    df.to_csv(csv_path)
 
     png_path = out_dir / f"{prefix}.png"
     disp = ConfusionMatrixDisplay(confusion_matrix=np.asarray(cm), display_labels=list(labels))

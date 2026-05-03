@@ -35,7 +35,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional, List
 
 import mlflow
-import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, ConfigDict
@@ -154,7 +153,6 @@ DROP_MODEL_COLS = {"customer_id"}
 
 
 def normalize_customer_id(customer_id: str) -> str:
-    # protege contra payloads do tipo "'12345'" ou '"12345"'
     return customer_id.strip().strip('"').strip("'")
 
 
@@ -297,7 +295,8 @@ def predict(request: ChurnPredictRequest, threshold: Optional[float] = None) -> 
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(threshold) if threshold is not None else default_th
 
-    customer_id = normalize_customer_id(request.customer_id)
+    payload = request.model_dump()
+    payload["customer_id"] = normalize_customer_id(payload["customer_id"])
 
     X = to_model_df(request.model_dump())
     X = coerce_numeric(X)
@@ -340,9 +339,13 @@ def predict_batch(payload: ChurnBatchPredictRequest) -> ChurnBatchPredictRespons
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(payload.threshold) if payload.threshold is not None else default_th
 
-    customer_ids = [normalize_customer_id(item.customer_id) for item in payload.items]
+    items = []
+    for item in payload.items:
+        d = item.model_dump()
+        d["customer_id"] = normalize_customer_id(d["customer_id"])
+        items.append(d)
 
-    X = to_model_df_batch([item.model_dump() for item in payload.items])
+    X = to_model_df_batch(items)
     X = coerce_numeric(X)
     validate_required_numeric(X)
 

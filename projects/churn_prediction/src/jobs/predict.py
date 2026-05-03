@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import mlflow
 import numpy as np
