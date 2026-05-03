@@ -51,7 +51,6 @@
         │   │   ├── load_data.py
         │   │   ├── preprocess.py
         │   │   └── transformers.py
-        │   ├── data_io.py
         │   ├── entrypoints
         │   │   ├── __init__.py
         │   │   └── cli.py
@@ -74,7 +73,6 @@
         │   │   ├── mlflow_selection_utils.py
         │   │   ├── mlflow_utils.py
         │   │   └── persistence.py
-        │   ├── principal.py
         │   └── utils
         │       ├── __init__.py
         │       ├── constants.py
@@ -98,6 +96,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-26 directories, 67 files
+26 directories, 65 files
 ```
 <!-- TREE:END -->
