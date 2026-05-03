@@ -6,22 +6,24 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+
 from __future__ import annotations
 
-from pathlib import Path
-import requests
-from mlflow.exceptions import MlflowException
-
-from typing import Iterable, Optional, Tuple, Union, Any
-
-import torch
-import torch.nn as nn
-import pandas as pd
-
 import logging
+from pathlib import Path
+from typing import Any, Iterable, Optional, Tuple, Union
 
 import mlflow
+import mlflow.pyfunc
 import numpy as np
+import pandas as pd
+import requests
+import skops.io as sio
+import torch
+import torch.nn as nn
+from mlflow.exceptions import MlflowException
+from mlflow.models import infer_signature
+from mlflow.models.signature import ModelSignature
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -31,38 +33,29 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from sklearn.base import BaseEstimator, clone
+from sklearn.compose import ColumnTransformer
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_classif
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+from sklearn.pipeline import Pipeline
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.data.feature_engineering import TelcoFeatureEngineeringBins
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
+from src.ml.data_utils import build_preprocessor, compute_metrics
 from src.utils.constants import (
-    MLFLOW_EXPERIMENT_NAME,
+    FEATURES_COLS,
     METRICS,
+    MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     MLP_GRID,
     N_FOLDS,
     PRIMARY_METRIC,
     RANDOM_SEED,
-    FEATURES_COLS,
-    YES_NO_COLS,TARGET_COL,
+    TARGET_COL,
+    YES_NO_COLS,
 )
-from src.data.load_data import load_data_churn
-from src.data.preprocess import pre_processing
-from sklearn.feature_selection import SelectKBest, mutual_info_classif, VarianceThreshold
-from src.data.feature_engineering import TelcoFeatureEngineeringBins
-from sklearn.base import BaseEstimator
-from src.ml.data_utils import compute_metrics, build_preprocessor
-
-from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.base import clone
-
-from mlflow.models.signature import ModelSignature
-
-import mlflow.pyfunc
-import skops.io as sio
-
-from mlflow.models import infer_signature
-
 
 HiddenDims = Union[str, Tuple[int, ...], Iterable[int]]
 
@@ -85,11 +78,12 @@ def log_end_to_end_model(
     - modelo PyTorch exportado como TorchScript
     - wrapper PyFunc para inferência end-to-end
 
-    A função salva os componentes em disco e faz upload como artifacts no MLflow via `mlflow.pyfunc.log_model`.
+    A função salva os componentes em disco e faz upload como artifacts no MLflow via
+    `mlflow.pyfunc.log_model`.
 
     Args:
-        feature_engineering: Transformer/estimador scikit-learn responsável pelo feature engineering.
-        preprocessor: Objeto responsável pelo preprocess (tipicamente `ColumnTransformer` ou pipeline).
+        feature_engineering: Transformer scikit-learn responsável pelo feature engineering.
+        preprocessor: Objeto responsável pelo preprocess (tipicamente `ColumnTransformer`).
         selector: Estimador scikit-learn responsável pela seleção de features.
         model: Modelo PyTorch (`torch.nn.Module`) treinado.
         input_dim: Dimensão de entrada esperada pelo modelo após preprocess + seleção.
@@ -148,7 +142,6 @@ class MLP(nn.Module):
         super().__init__()
 
         if isinstance(hidden_dims, str):
-
             hidden_dims = tuple(int(x.strip()) for x in hidden_dims.split(",") if x.strip())
 
         hidden_dims = tuple(hidden_dims)
@@ -157,12 +150,14 @@ class MLP(nn.Module):
         prev_dim = input_dim
 
         for h in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, h),
-                nn.BatchNorm1d(h),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(prev_dim, h),
+                    nn.BatchNorm1d(h),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
             prev_dim = h
 
         layers.append(nn.Linear(prev_dim, 1))
@@ -206,7 +201,8 @@ def setup_mlflow(tracking_uri: str, experiment_name: str, fallback_dir: str = "m
     Args:
         tracking_uri: URI do tracking server do MLflow.
         experiment_name: Nome do experimento no MLflow.
-        fallback_dir: Diretório local utilizado no fallback quando o server HTTP não estiver acessível.
+        fallback_dir: Diretório local utilizado no fallback quando o server HTTP não estiver
+        acessível.
     """
     if _is_http_uri(tracking_uri):
         try:
@@ -215,9 +211,10 @@ def setup_mlflow(tracking_uri: str, experiment_name: str, fallback_dir: str = "m
         except Exception as e:
             local_uri = f"file:{Path(fallback_dir).resolve()}"
             logging.warning(
-                "Não foi possível conectar no MLflow em %s (%s). "
-                "Fazendo fallback para %s",
-                tracking_uri, repr(e), local_uri
+                "Não foi possível conectar no MLflow em %s (%s). Fazendo fallback para %s",
+                tracking_uri,
+                repr(e),
+                local_uri,
             )
             mlflow.set_tracking_uri(local_uri)
     else:
@@ -242,7 +239,7 @@ def set_seed(seed: int) -> None:
     np.random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    
+
 
 def get_cv_splits(
     X: np.ndarray,
@@ -420,7 +417,9 @@ def train_config_cv(
         X_test_sel = prep_pipe.transform(X_test_df).astype(np.float32)
 
         model = MLP(X_train_sel.shape[1], params["hidden_layers"], params["dropout"])
-        model, train_losses = train_one_fold(model, X_train_sel, y_train, X_test_sel, y_test, params)
+        model, train_losses = train_one_fold(
+            model, X_train_sel, y_train, X_test_sel, y_test, params
+        )
 
         y_prob = predict_proba(model, X_test_sel)
         y_pred = (y_prob >= 0.5).astype(int)
@@ -429,19 +428,24 @@ def train_config_cv(
         for m in METRICS:
             fold_metrics[m].append(metrics[m])
 
-        fold_oof.append({
-            "fold": fold_idx,
-            "y_true": y_test.astype(int),
-            "y_proba": y_prob.astype(float),
-            "metrics": metrics,
-            "n_features_after": int(X_train_sel.shape[1]),
-        })
+        fold_oof.append(
+            {
+                "fold": fold_idx,
+                "y_true": y_test.astype(int),
+                "y_proba": y_prob.astype(float),
+                "metrics": metrics,
+                "n_features_after": int(X_train_sel.shape[1]),
+            }
+        )
 
     summary = {
         "params": params,
         "k_best": k_best,
         "cv_mean": {m: float(np.mean(fold_metrics[m])) for m in METRICS},
-        "cv_std": {m: float(np.std(fold_metrics[m], ddof=1)) if len(fold_metrics[m]) > 1 else 0.0 for m in METRICS},
+        "cv_std": {
+            m: float(np.std(fold_metrics[m], ddof=1)) if len(fold_metrics[m]) > 1 else 0.0
+            for m in METRICS
+        },
         "fold_oof": fold_oof,
     }
     return summary
@@ -507,12 +511,14 @@ def make_prep_pipe(
         Um `Pipeline` scikit-learn configurado.
     """
     fe_kwargs = fe_kwargs or dict(monthlycharges_q=5, totalcharges_q=10)
-    return Pipeline(steps=[
-        ("feature_engineering", TelcoFeatureEngineeringBins(**fe_kwargs)),
-        ("preprocess", clone(preprocessor_base)),
-        ("drop_constant", VarianceThreshold(threshold=0.0)),
-        ("select_kbest", SelectKBest(score_func=mutual_info_classif, k=k_best)),
-    ])
+    return Pipeline(
+        steps=[
+            ("feature_engineering", TelcoFeatureEngineeringBins(**fe_kwargs)),
+            ("preprocess", clone(preprocessor_base)),
+            ("drop_constant", VarianceThreshold(threshold=0.0)),
+            ("select_kbest", SelectKBest(score_func=mutual_info_classif, k=k_best)),
+        ]
+    )
 
 
 def fit_transform_fold(
@@ -563,7 +569,9 @@ def fit_eval_mlp(
             - dicionário de métricas calculadas
     """
     model = MLP(X_train_sel.shape[1], best_params["hidden_layers"], best_params["dropout"])
-    model, train_losses = train_one_fold(model, X_train_sel, y_train_f, X_test_sel, y_test_f, best_params)
+    model, train_losses = train_one_fold(
+        model, X_train_sel, y_train_f, X_test_sel, y_test_f, best_params
+    )
     y_prob = predict_proba(model, X_test_sel)
     y_pred = (y_prob >= 0.5).astype(int)
     metrics = compute_metrics(y_test_f.astype(int), y_pred, y_prob)
@@ -606,23 +614,32 @@ def run_cv_mlp(
         y_test_f = y.iloc[test_idx].to_numpy(dtype=np.float32)
 
         prep_pipe = make_prep_pipe(preprocessor_base, k_best)
-        X_train_sel, X_test_sel = fit_transform_fold(prep_pipe, X_train_df, y_train_f.astype(int), X_test_df)
+        X_train_sel, X_test_sel = fit_transform_fold(
+            prep_pipe, X_train_df, y_train_f.astype(int), X_test_df
+        )
 
-        _, train_losses, y_prob, metrics = fit_eval_mlp(best_params, X_train_sel, y_train_f, X_test_sel, y_test_f)
+        _, train_losses, y_prob, metrics = fit_eval_mlp(
+            best_params, X_train_sel, y_train_f, X_test_sel, y_test_f
+        )
 
         for m in METRICS:
             fold_scores[m].append(float(metrics[m]))
 
-        fold_oof.append({
-            "fold": fold_idx,
-            "y_true": y_test_f.astype(int),
-            "y_proba": y_prob.astype(float),
-            "metrics": metrics,
-            "n_epochs": len(train_losses),
-        })
+        fold_oof.append(
+            {
+                "fold": fold_idx,
+                "y_true": y_test_f.astype(int),
+                "y_proba": y_prob.astype(float),
+                "metrics": metrics,
+                "n_epochs": len(train_losses),
+            }
+        )
 
     cv_mean = {m: float(np.mean(fold_scores[m])) for m in METRICS}
-    cv_std = {m: float(np.std(fold_scores[m], ddof=1)) if len(fold_scores[m]) > 1 else 0.0 for m in METRICS}
+    cv_std = {
+        m: float(np.std(fold_scores[m], ddof=1)) if len(fold_scores[m]) > 1 else 0.0
+        for m in METRICS
+    }
 
     return {"k_best": k_best, "cv_mean": cv_mean, "cv_std": cv_std, "fold_oof": fold_oof}
 
@@ -768,9 +785,13 @@ def log_best_mlp_run(
     if len(int_cols) > 0:
         input_example[int_cols] = input_example[int_cols].astype("float64")
 
-    X_ex = final["selector"].transform(
-        final["preprocessor"].transform(final["fe"].transform(input_example)).astype(np.float32)
-    ).astype(np.float32)
+    X_ex = (
+        final["selector"]
+        .transform(
+            final["preprocessor"].transform(final["fe"].transform(input_example)).astype(np.float32)
+        )
+        .astype(np.float32)
+    )
 
     output_example = predict_proba(final["model"], X_ex)
     signature = infer_signature(input_example, output_example)
@@ -892,7 +913,9 @@ def main():
 
         log_best_mlp_run(best["params"], X_df, y, splits, preprocessor_base)
 
-    console.print("\n[bold green]Treino MLP concluído (1 run por config + modelo final)![/bold green]")
+    console.print(
+        "\n[bold green]Treino MLP concluído (1 run por config + modelo final)![/bold green]"
+    )
     console.print(f"[dim]Resultados logados no MLflow: {MLFLOW_TRACKING_URI}[/dim]\n")
 
 

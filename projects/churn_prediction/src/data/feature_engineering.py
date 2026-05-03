@@ -6,16 +6,18 @@
 Uso:
     python src/data/feature_engineering.py
 """
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
-from src.utils.constants import YES_NO_COLS
 from src.ml.logging_utils import get_logger
+from src.utils.constants import YES_NO_COLS
 
 logger = get_logger(__name__)
+
 
 class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
     """
@@ -53,7 +55,7 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         Args:
             s: Série numérica para calcular os edges.
             q: Número de bins desejados.
-        
+
         Returns:
             Array de edges para os bins, com pelo menos 2 edges distintos.
         """
@@ -69,7 +71,7 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
             edges = np.array([v - 1.0, v + 1.0], dtype=float)
 
         return edges
-    
+
     def _impute_totalcharges(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Regra de imputação consistente entre treino e inferência API:
@@ -83,7 +85,6 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
             mask = df["TotalCharges"].isna()
             df.loc[mask, "TotalCharges"] = df.loc[mask, "MonthlyCharges"]
         return df
-
 
     def fit(self, X: pd.DataFrame, y=None):
         """
@@ -107,7 +108,6 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         self.total_edges_ = self._quantile_edges(X["TotalCharges"], self.totalcharges_q)
         return self
 
-
     def _apply_bins(self, s: pd.Series, edges: np.ndarray):
         """
         Aplica bins fixos via pd.cut e devolve inteiros [0..n_bins-1].
@@ -116,7 +116,7 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         Args:
             s: Série numérica a ser binned.
             edges: Array de edges para os bins (deve ser monotônico e sem duplicados).
-        
+
         Returns:
             Série de inteiros representando os bins, com -1 para valores NaN.
         """
@@ -132,10 +132,10 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
     def transform(self, X: pd.DataFrame):
         """
         Aplica a engenharia de features usando os bins aprendidos no fit.
-        
+
         Args:
             X: DataFrame a ser transformado, deve conter as colunas MonthlyCharges e TotalCharges.
-        
+
         Returns:
             DataFrame com as novas features criadas.
         """
@@ -153,7 +153,7 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
         df["ltv"] = df["MonthlyCharges"] * df["tenure"]
 
         df["MonthlyCharges_group"] = self._apply_bins(df["MonthlyCharges"], self.monthly_edges_)
-    
+
         df["TotalCharges_group"] = self._apply_bins(df["TotalCharges"], self.total_edges_)
 
         df["onePlusYearCustomer"] = (df["tenure"] > 12).astype(int)
@@ -182,12 +182,16 @@ class TelcoFeatureEngineeringBins(BaseEstimator, TransformerMixin):
 def main() -> None:
     df = load_data_churn()
     df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features")
-    
+
     fe = TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)
     df_feature_engineering = fe.fit_transform(df_clean)
 
-    logger.info("Colunas após feature engineering (%d): %s",
-                df_feature_engineering.shape[1], df_feature_engineering.columns.tolist())
+    logger.info(
+        "Colunas após feature engineering (%d): %s",
+        df_feature_engineering.shape[1],
+        df_feature_engineering.columns.tolist(),
+    )
+
 
 if __name__ == "__main__":
     main()

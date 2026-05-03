@@ -1,4 +1,5 @@
-"""Pre processamento — transformação dos dados nulos, vazios ou em branco por meio de métodos estatísticos.
+"""Pre processamento — transformação dos dados nulos, vazios ou em branco por meio de métodos
+estatísticos.
 
 - Identifica colunas nulas/vazias por tipo.
 - Imputa mediana/moda para valores faltantes.
@@ -8,9 +9,11 @@ Uso:
     python src/data/preprocess.py
 
 """
+
 import logging
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 from src.data.load_data import load_data_churn
 from src.utils.constants import YES_NO_COLS
@@ -69,10 +72,7 @@ def get_null_columns(df: pd.DataFrame) -> tuple[list[str], list[str], list[str]]
 
 
 def impute_missing(
-        df: pd.DataFrame,
-        cat_cols_null: list,
-        num_cols_null: list,
-        bool_cols_null: list
+    df: pd.DataFrame, cat_cols_null: list, num_cols_null: list, bool_cols_null: list
 ) -> pd.DataFrame:
     """Imputa valores faltantes: median para numéricas, mode para categóricas e booleanas.
 
@@ -81,14 +81,14 @@ def impute_missing(
         cat_cols_null: Features categóricas a serem transformadas.
         num_cols_null: Features numéricas a serem transformadas.
         bool_cols_null: Features booleanas a serem transformadas.
-    
+
     Returns:
         Dataframe com a transformação final
     """
-    if 'TotalCharges' in num_cols_null and 'TotalCharges' in df.columns:
-        if 'MonthlyCharges' in df.columns:
-            mask = df['TotalCharges'].isna()
-            df.loc[mask, 'TotalCharges'] = df.loc[mask, 'MonthlyCharges']
+    if "TotalCharges" in num_cols_null and "TotalCharges" in df.columns:
+        if "MonthlyCharges" in df.columns:
+            mask = df["TotalCharges"].isna()
+            df.loc[mask, "TotalCharges"] = df.loc[mask, "MonthlyCharges"]
 
     for col in num_cols_null:
         if col in df.columns:
@@ -118,7 +118,8 @@ def pre_processing(
 
     Args:
         df: Dataframe a ser transformado.
-        yes_no_cols: Features categorizadas em yes/no e que serão transformadas em tipagem inteiro no formato 1/0.
+        yes_no_cols: Features categorizadas em yes/no e que serão transformadas em tipagem inteiro
+            no formato 1/0.
         stage_name: Nome do estágio para logging.
 
     Returns:
@@ -126,7 +127,7 @@ def pre_processing(
     """
     df_clean = df.copy()
 
-    df_clean['TotalCharges'] = pd.to_numeric(df_clean['TotalCharges'], errors='coerce')
+    df_clean["TotalCharges"] = pd.to_numeric(df_clean["TotalCharges"], errors="coerce")
 
     df_clean = df_clean.dropna(subset=["customerID"])
 
@@ -141,13 +142,15 @@ def pre_processing(
     df_clean = impute_missing(df_clean, cat_cols_null, num_cols_null, bool_cols_null)
 
     if verbose:
-            logger.info("\n--- %s ---", stage_name)
-            logger.info(
-                "df_clean shape=%s | nulls_total=%d",
-                df_clean.shape,
-                int(df_clean.isna().sum().sum()),
-            )
-            logger.info("First %d rows of df_clean:\n%s", head_n, df_clean.head(head_n).to_string(index=False))
+        logger.info("\n--- %s ---", stage_name)
+        logger.info(
+            "df_clean shape=%s | nulls_total=%d",
+            df_clean.shape,
+            int(df_clean.isna().sum().sum()),
+        )
+        logger.info(
+            "First %d rows of df_clean:\n%s", head_n, df_clean.head(head_n).to_string(index=False)
+        )
 
     return df_clean
 
@@ -155,7 +158,9 @@ def pre_processing(
 def main() -> None:
     df = load_data_churn()
 
-    df_clean = pre_processing(df, YES_NO_COLS, "Cleaned dataset and features", verbose=True, head_n=10)
+    df_clean = pre_processing(
+        df, YES_NO_COLS, "Cleaned dataset and features", verbose=True, head_n=10
+    )
 
     logger.info("First %d rows of df_clean:\n%s", df_clean.shape[0], df_clean.head())
 

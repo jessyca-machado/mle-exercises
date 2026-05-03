@@ -36,10 +36,12 @@ class ChurnModelXGB(mlflow.pyfunc.PythonModel):
 
         Args:
             context (Any): Contexto do MLflow, não utilizado aqui.
-            model_input (pd.DataFrame): DataFrame de entrada, sem as colunas de features engineering.
+            model_input (pd.DataFrame): DataFrame de entrada, sem as colunas de features
+                engineering.
 
         Returns:
-            pd.DataFrame: DataFrame com uma coluna `y_pred_proba` contendo as probabilidades de churn.
+            pd.DataFrame: DataFrame com uma coluna `y_pred_proba` contendo as probabilidades de
+                churn.
         """
         if not isinstance(model_input, pd.DataFrame):
             model_input = pd.DataFrame(model_input)
@@ -58,5 +60,6 @@ class ChurnModelXGB(mlflow.pyfunc.PythonModel):
             proba = np.asarray(pred, dtype=float)
 
         return pd.DataFrame({"y_pred_proba": proba})
+
 
 mlflow.models.set_model(ChurnModelXGB())

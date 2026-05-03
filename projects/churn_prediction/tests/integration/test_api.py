@@ -1,11 +1,14 @@
 import os
+
 import mlflow
 import pytest
 from fastapi.testclient import TestClient
 from sklearn.linear_model import LogisticRegression
+
+from src.api.app import app
 from src.core.models.trainer import ChurnModelTrainer
 from src.jobs.train import log_xgb_end_to_end_pyfunc
-from src.api.app import app
+
 
 def _setup_temp_mlflow(tmp_path) -> tuple[str, str]:
     """
@@ -31,6 +34,7 @@ def _setup_temp_mlflow(tmp_path) -> tuple[str, str]:
         mlflow.create_experiment(exp_name, artifact_location=artifact_location)
     mlflow.set_experiment(exp_name)
     return tracking_uri, registry_uri
+
 
 def _train_and_register_pyfunc_model(X, y, request, registered_name: str) -> str:
     """
@@ -68,6 +72,7 @@ def _train_and_register_pyfunc_model(X, y, request, registered_name: str) -> str
         version = str(mv.version)
     return f"models:/{registered_name}/{version}"
 
+
 @pytest.fixture(scope="module")
 def api_client(tmp_path_factory, X_y, request) -> TestClient:
     """
@@ -88,9 +93,11 @@ def api_client(tmp_path_factory, X_y, request) -> TestClient:
     with TestClient(app) as client:
         yield client
 
+
 def _valid_payload(**overrides) -> dict:
     """
-    Dicionário com payload de exemplo válido para o endpoint de predição, com possibilidade de overrides.
+    Dicionário com payload de exemplo válido para o endpoint de predição, com possibilidade de
+        overrides.
 
     Args:
         **overrides: campos para sobrescrever o payload base.
@@ -123,11 +130,13 @@ def _valid_payload(**overrides) -> dict:
     base.update(overrides)
     return base
 
+
 def test_health_ok(api_client) -> None:
     """Teste simples para verificar se o endpoint de health check está funcionando."""
     r = api_client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
 
 def test_ready_ok(api_client) -> None:
     """Teste simples para verificar se o endpoint de ready check está funcionando."""
@@ -136,6 +145,7 @@ def test_ready_ok(api_client) -> None:
     body = r.json()
     assert body["status"] == "ready"
     assert "model_uri" in body
+
 
 def test_predict_valid_contract(api_client) -> None:
     """Teste de predição com payload válido, verificando estrutura da resposta."""
@@ -148,6 +158,7 @@ def test_predict_valid_contract(api_client) -> None:
     assert "model_uri" in body
     assert body["threshold"] == 0.5
 
+
 def test_predict_missing_required_field_returns_422(api_client) -> None:
     """Teste para verificar que campos obrigatórios faltando retornam erro 422."""
     payload = _valid_payload()
@@ -155,11 +166,13 @@ def test_predict_missing_required_field_returns_422(api_client) -> None:
     r = api_client.post("/predict", json=payload)
     assert r.status_code == 422
 
+
 def test_predict_invalid_numeric_returns_422(api_client) -> None:
     """Teste para verificar que valores numéricos inválidos retornam erro 422."""
     payload = _valid_payload(tenure=-1)
     r = api_client.post("/predict", json=payload)
     assert r.status_code == 422
+
 
 def test_predict_blank_totalcharges_does_not_break(api_client) -> None:
     """Teste para verificar que campos em branco não quebram a API."""

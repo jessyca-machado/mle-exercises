@@ -1,10 +1,12 @@
 """Pipeline de inferência: carrega modelo do MLflow e gera predições para um DataFrame de features.
-- O modelo deve ser um MLflow PyFunc que retorna um DataFrame com coluna de probabilidade (ex: "y_pred_proba").
+- O modelo deve ser um MLflow PyFunc que retorna um DataFrame com coluna de probabilidade
+    (ex: "y_pred_proba").
 - O código é modular para facilitar uso em batch offline, FastAPI, ou testes unitários.
 
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,13 +19,13 @@ import pandas as pd
 import pytz
 from mlflow.tracking import MlflowClient
 
+from src.core.models.trainer import ChurnModelTrainer
 from src.ml.mlflow_utils import setup_mlflow_sqlite
 from src.utils.constants import (
     MLFLOW_ARTIFACT_ROOT,
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
 )
-from src.core.models.trainer import ChurnModelTrainer
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class PredictConfig:
     """
     Configuração para inferência.
     """
+
     registry_uri: str = MLFLOW_TRACKING_URI
     model_name: Optional[str] = None
     model_version: Optional[Union[int, str]] = None

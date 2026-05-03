@@ -1,39 +1,41 @@
 """
 Utilitários para carregamento, pré-processamento e avaliação de dados de churn.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Sequence, Tuple
-import pandas as pd
-import numpy as np
 
-from sklearn.model_selection import train_test_split
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
     f1_score,
     precision_score,
     recall_score,
-    roc_auc_score,  
+    roc_auc_score,
 )
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.utils.constants import (
+    BIN_COLS,
+    BOL_COLS,
+    CAT_COLS,
     FEATURES_COLS,
-    YES_NO_COLS,
+    NUM_COLS,
+    RANDOM_SEED,
     TARGET_COL,
     TEST_SIZE,
-    RANDOM_SEED,
-    BOL_COLS,
-    BIN_COLS,
-    CAT_COLS,
-    NUM_COLS
+    YES_NO_COLS,
 )
 
 
@@ -43,6 +45,7 @@ class ExistingColumnsSelector(BaseEstimator, TransformerMixin):
     Seleciona, no fit, a interseção entre uma lista desejada e as colunas
     presentes no DataFrame. No transform, retorna apenas essas colunas (na mesma ordem).
     """
+
     columns: Sequence[str]
 
     def fit(self, X: pd.DataFrame, y=None):
@@ -56,8 +59,9 @@ class ExistingColumnsSelector(BaseEstimator, TransformerMixin):
 
 
 def load_and_split_churn() -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    """Carrega os dados de churn, realiza o pré-processamento e divide em conjuntos de treino e teste.
-    
+    """Carrega os dados de churn, realiza o pré-processamento e divide em conjuntos de treino e
+        teste.
+
     Returns:
         X_train, X_test, y_train, y_test
     """
@@ -122,7 +126,8 @@ def num_selector(X: pd.DataFrame) -> list[str]:
 
 def bol_selector(X: pd.DataFrame) -> list[str]:
     """
-    Seleciona colunas booleanas presentes no DataFrame, excluindo as categóricas e as numéricas/binadas.
+    Seleciona colunas booleanas presentes no DataFrame, excluindo as categóricas e as n
+        uméricas/binadas.
     """
     scaled_cols = [c for c in (NUM_COLS + BIN_COLS) if c not in set(CAT_COLS)]
     bol_cols = [c for c in BOL_COLS if c not in set(CAT_COLS) and c not in set(scaled_cols)]

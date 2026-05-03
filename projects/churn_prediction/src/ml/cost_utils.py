@@ -2,24 +2,24 @@
 Uso:
     python experiments/selection/compare_models.py
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Optional, Literal
+from typing import Any, Callable, Iterable, Literal, Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix
-
 
 Objective = Literal["net_value", "total_cost"]
 
 
 @dataclass(frozen=True)
 class CostSpec:
-    cost_fp: float = 1.0 #paga cost_fp por cada falso positivo (FP)
-    cost_fn: float = 5.0 #paga cost_fn por cada falso negativo (FN)
-    benefit_tp: float = 10.0 #recebe benefit_tp por cada verdadeiro positivo (TP)
+    cost_fp: float = 1.0
+    cost_fn: float = 5.0
+    benefit_tp: float = 10.0
 
 
 def bootstrap_ci(
@@ -78,7 +78,6 @@ def make_threshold_grid(
     if mode == "toolkit":
         return np.asarray([0.3, 0.5, 0.7], dtype=float)
 
-    # default: linspace
     return np.linspace(0.0, 1.0, int(n))
 
 

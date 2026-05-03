@@ -15,8 +15,8 @@ class FakePyfuncModel:
 
 def test_trainer_predict_with_pyfunc_dataframe(X_example) -> None:
     """
-    Checa se o método predict do ChurnModelTrainer funciona corretamente quando o modelo final é um pyfunc que retorna um DataFrame
-    com a coluna 'y_pred_proba'. O teste faz:
+    Checa se o método predict do ChurnModelTrainer funciona corretamente quando o modelo final é um
+    pyfunc que retorna um DataFrame com a coluna 'y_pred_proba'. O teste faz:
         - Injeta um modelo pyfunc fake que retorna probabilidades lineares de 0 a 1.
         - Roda o método predict do trainer com um exemplo de input.
         - Verifica se as formas dos arrays de predição estão corretas, se as classes

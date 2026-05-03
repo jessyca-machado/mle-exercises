@@ -1,7 +1,8 @@
-from mlflow.tracking import MlflowClient
-from mlflow.entities import Run
-from rich.console import Console
 from typing import List, Optional
+
+from mlflow.entities import Run
+from mlflow.tracking import MlflowClient
+from rich.console import Console
 
 from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
@@ -59,7 +60,8 @@ def get_latest_mlp_refit_run(client: MlflowClient) -> Optional[Run]:
     - retorna o primeiro run que satisfaz `is_mlp_refit_run(run)`
 
     Args:
-        client: Instância de `mlflow.tracking.MlflowClient` utilizada para consultar experimentos e runs.
+        client: Instância de `mlflow.tracking.MlflowClient` utilizada para consultar experimentos e
+            runs.
 
     Returns:
         O run (objeto `mlflow.entities.Run`) mais recente que representa o refit do MLP,
@@ -80,10 +82,7 @@ def get_latest_mlp_refit_run(client: MlflowClient) -> Optional[Run]:
     return None
 
 
-def find_cv_run_by_config_name(
-        client: MlflowClient,
-        config_name: str
-) -> Optional[Run]:
+def find_cv_run_by_config_name(client: MlflowClient, config_name: str) -> Optional[Run]:
     """
     Encontra o run de cross-validation (CV) correspondente a uma configuração específica,
     identificado pelo `config_name`.
@@ -99,7 +98,8 @@ def find_cv_run_by_config_name(
         config_name: Nome da configuração (por exemplo, "mlp_config_3_kbest_all").
 
     Returns:
-        O run de CV (objeto `mlflow.entities.Run`) correspondente à config, ou None se não encontrar.
+        O run de CV (objeto `mlflow.entities.Run`) correspondente à config, ou None se não
+            encontrar.
     """
     exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
     if exp is None:
@@ -126,7 +126,8 @@ def has_any_oof(client: MlflowClient, run_id: str) -> bool:
 
     Aceita dois padrões de nome de artifact:
     - sem prefixo: oof/y_true_fold_0.npy e oof/y_proba_fold_0.npy
-    - com prefixo: oof/<qualquer_prefixo>y_true_fold_0.npy e oof/<qualquer_prefixo>y_proba_fold_0.npy
+    - com prefixo: oof/<qualquer_prefixo>y_true_fold_0.npy e
+        oof/<qualquer_prefixo>y_proba_fold_0.npy
 
     A função não baixa os arquivos, apenas lista os artifacts no caminho "oof/" e checa
     se existe pelo menos o fold 0 para y_true e y_proba.
@@ -167,7 +168,8 @@ def get_latest_runs_with_mlp_from_refit(client: MlflowClient) -> List[Run]:
         client: Instância de `mlflow.tracking.MlflowClient`.
 
     Returns:
-        Lista de runs (objetos `mlflow.entities.Run`) selecionados (um por model_name, quando possível).
+        Lista de runs (objetos `mlflow.entities.Run`) selecionados (um por model_name, quando
+            possível).
     """
     exp = client.get_experiment_by_name(MLFLOW_EXPERIMENT_NAME)
     if exp is None:
@@ -191,8 +193,11 @@ def get_latest_runs_with_mlp_from_refit(client: MlflowClient) -> List[Run]:
                 chosen["mlp"] = mlp_cv_run
             else:
                 console.print(
-                    f"[yellow]Aviso:[/yellow] não achei run de CV para best_config_name='{best_config_name}'. "
-                    "Vou cair no fallback do último CV do mlp."
+                    (
+                        f"[yellow]Aviso:[/yellow] não achei run de CV para "
+                        f"best_config_name='{best_config_name}'. "
+                        "Vou cair no fallback do último CV do mlp."
+                    )
                 )
 
     # 2) Outros modelos (e fallback do MLP): último run CV por model_name com OOF
@@ -219,7 +224,8 @@ def run_display_name(run: Run) -> str:
     Prioriza o parâmetro "model_name" (padrão do projeto). Se não existir, usa o `run_id`.
 
     Args:
-        run: Objeto `mlflow.entities.Run` (ou similar), contendo `run.data.params` e `run.info.run_id`.
+        run: Objeto `mlflow.entities.Run` (ou similar), contendo `run.data.params` e
+            `run.info.run_id`.
 
     Returns:
         String com o nome do modelo (model_name) ou, em fallback, o run_id.

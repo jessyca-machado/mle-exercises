@@ -1,11 +1,14 @@
-import pytest
 import mlflow
+import pytest
 from sklearn.linear_model import LogisticRegression
+
 from src.core.models.trainer import ChurnModelTrainer
+
 
 def test_mlflow_logs_run(tmp_path, X_y, monkeypatch: pytest.MonkeyPatch) -> None:
     """
-    Testa se é possível logar uma execução de treino no MLflow, verificando se o banco de dados do MLflow é criado
+    Testa se é possível logar uma execução de treino no MLflow, verificando se o banco de dados do
+        MLflow é criado
     e se os parâmetros e métricas são logados corretamente.
 
     Args:

@@ -1,9 +1,10 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional, Union
+
 from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
+
 import mlflow
 from mlflow.tracking import MlflowClient
-
 
 
 def _cast_param_value(name: str, value: Any) -> Any:
@@ -56,7 +57,7 @@ def _cast_kbest(value: Any) -> Union[int, str]:
 
     Args:
         - value: valor do parâmetro (ex.: "10", "all", None)
-    
+
     Returns:
         Total de features a serem selecionadas, ou "all" para manter todas.
     """
@@ -79,6 +80,7 @@ class BestXGBFromSearch:
     """
     Resultado pronto para uso do melhor run do RandomizedSearchCV.
     """
+
     run_id: str
     best_cv_score: float
     metric_key: str
@@ -94,7 +96,7 @@ def fetch_best_xgb_params_from_mlflow(
     search_type_value: str = "randomized",
     search_type_field: str = "params.search_type",
     client: Optional[MlflowClient] = None,
-    ) -> BestXGBFromSearch:
+) -> BestXGBFromSearch:
     """
     Busca o melhor run do RandomizedSearchCV no MLflow e extrai:
 
@@ -115,10 +117,10 @@ def fetch_best_xgb_params_from_mlflow(
         - experiment_name: nome do experimento no MLflow onde o search foi logado
         - tracking_uri: URI do MLflow Tracking Server (ex.: "http://localhost:5000")
         - metric_key: nome da métrica onde o score do search está logado (ex.: "best_cv_score")
-        - search_type_value: valor do param "search_type" que identifica o run do search (ex.: "randomized")
-        - search_type_field: nome do param que identifica o tipo do search (ex.: "params.search_type")
+        - search_type_value: valor do param "search_type" que identifica o run do search
+        - search_type_field: nome do param que identifica o tipo do search
         - client: instância opcional do MlflowClient para evitar criar uma nova conexão
-    
+
     Returns:
         - BestXGBFromSearch: dataclass com run_id, best_cv_score, xgb_params e select_kbest_k
     """

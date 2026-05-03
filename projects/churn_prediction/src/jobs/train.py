@@ -24,6 +24,7 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -34,28 +35,28 @@ from typing import Any, Optional, Union
 import mlflow
 import pandas as pd
 import pytz
-from src.ml.mlflow_utils import setup_mlflow_sqlite
-from src.data.load_data import load_data_churn
-from src.data.preprocess import pre_processing
-from src.utils.constants import (
-    FEATURES_COLS,
-    N_FOLDS, RANDOM_SEED,
-    TARGET_COL, YES_NO_COLS,
-    PRIMARY_METRIC,
-    MLFLOW_ARTIFACT_ROOT,
-    MLFLOW_TRACKING_URI
-)
-
 import skops.io as sio
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
+from sklearn.preprocessing import FunctionTransformer
 from xgboost import XGBClassifier
 
 from src.core.models.trainer import ChurnModelTrainer
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
 from src.entrypoints.cli import parse_args
 from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
-
-from sklearn.preprocessing import FunctionTransformer
+from src.ml.mlflow_utils import setup_mlflow_sqlite
+from src.utils.constants import (
+    FEATURES_COLS,
+    MLFLOW_ARTIFACT_ROOT,
+    MLFLOW_TRACKING_URI,
+    N_FOLDS,
+    PRIMARY_METRIC,
+    RANDOM_SEED,
+    TARGET_COL,
+    YES_NO_COLS,
+)
 
 
 @dataclass(frozen=True)
@@ -166,12 +167,12 @@ def run_train_pipeline(
         config: TrainConfig com configurações de treino e MLflow.
         trainer: ChurnModelTrainer opcional (para injeção em testes).
         client: MlflowClient opcional (para injeção em testes).
-    
+
     Returns:
         Dicionário com informações do run, modelo e melhores parâmetros.
     """
     from logging import config
-    
+
     setup_mlflow_sqlite(
         tracking_uri=config.tracking_uri,
         experiment_name=config.experiment_name,

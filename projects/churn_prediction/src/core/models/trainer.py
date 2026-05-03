@@ -1,5 +1,5 @@
-"""Classe de treino — MOdelo a ser utilizado na pipeline de treino e teste da previsão de churn.
-"""
+"""Classe de treino — MOdelo a ser utilizado na pipeline de treino e teste da previsão de churn."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,8 +14,8 @@ from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 
 from src.data.feature_engineering import TelcoFeatureEngineeringBins
-from src.utils.constants import RANDOM_SEED, N_FOLDS
 from src.ml.data_utils import build_preprocessor
+from src.utils.constants import N_FOLDS, RANDOM_SEED
 
 
 @dataclass
@@ -60,7 +60,8 @@ class ChurnModelTrainer:
 
     def build(self, X: pd.DataFrame, y: pd.Series, model: BaseEstimator) -> None:
         """
-        Constroi o pipeline de machine learning end-to-end vinculando o pré-processador ao algoritmo.
+        Constroi o pipeline de machine learning end-to-end vinculando o pré-processador ao
+            +algoritmo.
 
         Args:
             X (pd.DataFrame): Conjunto de features de treinamento.
@@ -83,9 +84,9 @@ class ChurnModelTrainer:
         )
 
     def train(
-            self,
-            n_splits: int = N_FOLDS,
-            random_state: int = RANDOM_SEED,
+        self,
+        n_splits: int = N_FOLDS,
+        random_state: int = RANDOM_SEED,
     ) -> CVSummary:
         """
         Executa o treinamento do modelo utilizando validação cruzada estratificada.
@@ -99,7 +100,9 @@ class ChurnModelTrainer:
             modelo e o pipeline final ajustado.
         """
         if self.pipeline is None:
-            raise RuntimeError("Pipeline não construído. Chame build(X, y, model) antes de train().")
+            raise RuntimeError(
+                "Pipeline não construído. Chame build(X, y, model) antes de train()."
+            )
 
         self.n_splits = n_splits
         self.seed = random_state
@@ -142,7 +145,6 @@ class ChurnModelTrainer:
             params=self.params,
             fitted_pipeline=self.final_model,
         )
-
 
     def predict(
         self,

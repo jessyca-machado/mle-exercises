@@ -1,14 +1,17 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import joblib
+
 
 def save_joblib(model, path: str | Path) -> Path:
     """Salva um modelo usando joblib, garantindo que o diretório exista.
-    
+
     Args:
         model: O modelo a ser salvo.
         path: O caminho onde o modelo será salvo.
-    
+
     Returns:
         O caminho onde o modelo foi salvo.
     """
