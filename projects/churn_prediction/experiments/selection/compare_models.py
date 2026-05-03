@@ -4,7 +4,8 @@ Uso:
     # comparação normal, utilizando como baleline a regressão logística:
     python experiments/selection/compare_models.py
 
-    # comparação final, levando em consideração o valor líquido (net_value) dos modelos com recall de treino >= 0.8:
+    # comparação final, levando em consideração o valor líquido (net_value) dos modelos com recall 
+        de treino >= 0.8:
     python experiments/selection/compare_models.py \
     --metric business.sweep_foldwise.net_value \
     --gate-best-cv-score 0.8 \
@@ -13,33 +14,33 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+
 import logging
-from typing import Dict, List, Any, Mapping
 from pathlib import Path
+from typing import Any, Dict, List, Mapping
 
 import mlflow
 import numpy as np
 import scikit_posthocs as sp
+from mlflow.entities import Run
+from mlflow.entities.model_registry import ModelVersion
+from mlflow.tracking import MlflowClient
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from scipy import stats
 
-from mlflow.tracking import MlflowClient
-from mlflow.entities import Run
-from mlflow.entities.model_registry import ModelVersion
-
-from src.utils.constants import (
-    MLFLOW_EXPERIMENT_NAME,
-    MLFLOW_TRACKING_URI,
-    N_FOLDS,
-    ALPHA,
-)
+from src.entrypoints.cli import parse_args
 from src.ml.mlflow_selection_utils import (
     get_latest_runs_with_mlp_from_refit,
     run_display_name,
 )
-from src.entrypoints.cli import parse_args
+from src.utils.constants import (
+    ALPHA,
+    MLFLOW_EXPERIMENT_NAME,
+    MLFLOW_TRACKING_URI,
+    N_FOLDS,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -56,7 +57,8 @@ def load_fold_metric(client, run_id: str, metric: str) -> np.ndarray:
     - retorna um array vazio se o run não estiver exatamente N_FOLDS steps
 
     Args:
-        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar o histórico de métricas.
+        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar o histórico de
+            métricas.
         run_id: ID do run no MLflow de onde será lido o histórico da métrica.
         metric: Nome da métrica a ser carregada.
 
@@ -79,17 +81,13 @@ def load_fold_metric(client, run_id: str, metric: str) -> np.ndarray:
     return shape_metric_fold
 
 
-def print_nemenyi_matrix(
-        pvals,
-        names: List[str],
-        alpha: float = ALPHA
-) -> None:
+def print_nemenyi_matrix(pvals, names: List[str], alpha: float = ALPHA) -> None:
     """
     Imprime de forma legível uma matriz de p-valores pareados do teste post-hoc de Nemenyi,
     utilizando uma tabela do Rich.
 
     Células com p-valores abaixo de `alpha` são destacadas para indicar diferenças estatisticamente
-    significativas.
+        significativas.
 
     Args:
         pvals: Matriz quadrada indexada pelos nomes dos modelos, contendo p-valores pareados.
@@ -117,10 +115,7 @@ def print_nemenyi_matrix(
     console.print(table)
 
 
-def friedman_nemenyi(
-        all_scores: Dict[str, np.ndarray],
-        model_names: List[str]
-) -> Dict:
+def friedman_nemenyi(all_scores: Dict[str, np.ndarray], model_names: List[str]) -> Dict:
     """
     Executa o teste global de Friedman para 3+ modelos (amostras pareadas por fold),
     e, se for significativo, executa comparações pareadas post-hoc de Nemenyi.
@@ -131,7 +126,8 @@ def friedman_nemenyi(
     Args:
         all_scores: Mapeamento, onde cada valor é um array NumPy, de tamanho N_FOLDS com
             os valores da métrica por fold.
-        model_names: Lista de nomes de modelos a incluir no teste, devem existir como chaves no arg `all_scores`.
+        model_names: Lista de nomes de modelos a incluir no teste, devem existir como chaves no arg
+        `all_scores`.
 
     Returns:
         Um dicionário contendo:
@@ -154,14 +150,7 @@ def friedman_nemenyi(
     return result
 
 
-def print_duel_panel(
-        a: str,
-        b: str,
-        metric: str,
-        mean_a: float,
-        mean_b: float,
-        res: Dict
-) -> None:
+def print_duel_panel(a: str, b: str, metric: str, mean_a: float, mean_b: float, res: Dict) -> None:
     """
     Exibe um resumo detalhado e legível de uma comparação estatística pareada entre dois modelos,
     utilizando um Panel do Rich.
@@ -217,7 +206,7 @@ def apply_gate_filter(
 
     console.rule("[bold]Gate técnico (elegibilidade)[/bold]")
     console.print(f"[dim]Baseline: {baseline_name} | mean={baseline_mean:.6f}[/dim]")
-    console.print(f"[dim]Gate: mean >= {gate:.6f} (rel +{gate_rel*100:.2f}%) [/dim]\n")
+    console.print(f"[dim]Gate: mean >= {gate:.6f} (rel +{gate_rel * 100:.2f}%) [/dim]\n")
 
     eligible = {k: v for k, v in scores.items() if float(np.mean(v)) >= gate}
 
@@ -266,15 +255,14 @@ def register_winner(
     client.set_registered_model_alias(registry_name, alias, mv.version)
     for key, value in tags.items():
         client.set_model_version_tag(registry_name, mv.version, key, str(value))
-    console.print(f"  [green]✓[/green] {model_name} → {registry_name} v{mv.version} (alias: {alias})")
+    console.print(
+        f"  [green]✓[/green] {model_name} → {registry_name} v{mv.version} (alias: {alias})"
+    )
 
     return mv
 
 
-def wilcoxon_vs_baseline(
-        scores_model: np.ndarray,
-        scores_baseline: np.ndarray
-) -> Dict:
+def wilcoxon_vs_baseline(scores_model: np.ndarray, scores_baseline: np.ndarray) -> Dict:
     """
     Executa o teste pareado de Wilcoxon (signed-rank) entre os scores por fold de dois modelos.
     O teste é aplicado às diferenças por fold (modelo - baseline), assumindo que os vetores
@@ -361,7 +349,7 @@ def decide_winner(
         else:
             winner, loser = b, a
             reason = "no_sig_diff_choose_top2"
-        
+
         top_duel_dict = {
             "winner": winner,
             "loser": loser,
@@ -421,7 +409,9 @@ def decide_winner(
             "reason": reason,
         }
 
-    challenger = ranked[0] if ranked[0] != baseline else (ranked[1] if len(ranked) > 1 else baseline)
+    challenger = (
+        ranked[0] if ranked[0] != baseline else (ranked[1] if len(ranked) > 1 else baseline)
+    )
     if challenger == baseline:
         return {
             "winner": baseline,
@@ -476,12 +466,14 @@ def get_gate_score_recall(
     Ordem de resolução:
     1) Se o run logou a métrica "best_cv_score", retorna esse valor.
     2) Caso contrário, se o run logou "cv_mean_recall".
-    3) Caso contrário, tenta reconstruir a média do recall a partir do histórico por fold da métrica "recall"
+    3) Caso contrário, tenta reconstruir a média do recall a partir do histórico por fold da
+        métrica "recall"
         utilizando steps 0, n_folds-1.
     Se nenhuma opção estiver disponível, retorna None.
 
     Args:
-        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar histórico de métricas.
+        client: Instância de `mlflow.tracking.MlflowClient` usada para consultar histórico de
+            métricas.
         run: Objeto do run do MLflow.
         n_folds: Número esperado de folds.
 
@@ -557,7 +549,9 @@ def main():
                     score = float(score) if score is not None else None
 
                 ok = (score is not None) and (float(score) >= args.gate_best_cv_score)
-                gate_table.add_row(name, f"{score:.5f}" if score is not None else "NA", "✓" if ok else "✗")
+                gate_table.add_row(
+                    name, f"{score:.5f}" if score is not None else "NA", "✓" if ok else "✗"
+                )
 
                 if ok:
                     kept.append(r)
@@ -659,7 +653,12 @@ def main():
             mlflow.log_metric("duel_cohens_d", float(res["cohens_d"]))
             mlflow.set_tag("duel_significant", str(bool(res["significant"])))
 
-        console.print(f"\n[bold green]Winner:[/bold green] {winner}  [dim]({decision_out.get('reason','')})[/dim]")
+        console.print(
+            (
+                f"\n[bold green]Winner:[/bold green] {winner}  "
+                f"[dim]({decision_out.get('reason', '')})[/dim]"
+            )
+        )
         if res is not None:
             console.print(
                 f"[dim]Duel: {decision_out['duel_a']} vs {decision_out['duel_b']} | "
@@ -677,14 +676,16 @@ def main():
                 "decision_reason": decision_out.get("reason", ""),
             }
             if res is not None:
-                tags.update({
-                    "duel_a": decision_out["duel_a"],
-                    "duel_b": decision_out["duel_b"],
-                    "duel_test": res["test"],
-                    "duel_p_value": f"{res['p_value']:.6f}",
-                    "duel_mean_diff": f"{res['mean_diff']:+.6f}",
-                    "duel_significant": str(bool(res["significant"])),
-                })
+                tags.update(
+                    {
+                        "duel_a": decision_out["duel_a"],
+                        "duel_b": decision_out["duel_b"],
+                        "duel_test": res["test"],
+                        "duel_p_value": f"{res['p_value']:.6f}",
+                        "duel_mean_diff": f"{res['mean_diff']:+.6f}",
+                        "duel_significant": str(bool(res["significant"])),
+                    }
+                )
 
             register_winner(
                 client=client,
@@ -694,6 +695,7 @@ def main():
                 alias="champion",
                 tags=tags,
             )
+
 
 if __name__ == "__main__":
     main()

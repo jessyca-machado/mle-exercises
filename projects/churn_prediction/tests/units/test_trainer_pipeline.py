@@ -1,14 +1,17 @@
 # tests/test_trainer_pipeline.py
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+
 from src.core.models.trainer import ChurnModelTrainer
+
 
 def test_trainer_train_and_predict(X_y) -> None:
     """
     Testa a pipeline de treino e predição do ChurnModelTrainer. O teste faz o seguinte:
         - treina o modelo usando os dados de treino (X, y)
         - verifica se as métricas de avaliação estão presentes no resumo do treino
-        - roda a predição no mesmo conjunto de treino e verifica se as formas dos arrays de predição estão corretas e se as classes previstas são 0 ou 1.
+        - roda a predição no mesmo conjunto de treino e verifica se as formas dos arrays de
+            predição estão corretas e se as classes previstas são 0 ou 1.
 
     Args:
         X_y: fixture que retorna os dados de treino (X, y)

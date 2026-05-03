@@ -1,10 +1,7 @@
 import pandas as pd
 
 
-def log_class_distribution(
-        y: pd.Series,
-        name: str
-) -> tuple[str, pd.Series, pd.Series]:
+def log_class_distribution(y: pd.Series, name: str) -> tuple[str, pd.Series, pd.Series]:
     """
     Calcula a distribuição de classes de uma série (target), retornando contagens
     absolutas e proporções (frequências relativas).
@@ -17,7 +14,8 @@ def log_class_distribution(
         Tupla (name, counts, ratio), onde:
             - name: o mesmo identificador fornecido.
             - counts: contagem absoluta por classe (inclui NaN se existir).
-            - ratio: proporção por classe (normalizada para somar 1), arredondada em 4 casas (inclui NaN se existir).
+            - ratio: proporção por classe (normalizada para somar 1), arredondada em 4 casas
+                (inclui NaN se existir).
     """
 
     counts = y.value_counts(dropna=False)

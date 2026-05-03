@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
-import matplotlib.pyplot as plt
+
 
 def save_confusion_matrix_artifacts(
     *,

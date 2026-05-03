@@ -1,16 +1,20 @@
 """
 Utils para logging, garantindo que model_name esteja sempre presente para o formatter.
 """
+
 from __future__ import annotations
+
 import logging
+
 
 class EnsureModelNameFilter(logging.Filter):
     """
     Garante que todo LogRecord tenha o campo model_name para não quebrar.
     """
+
     def filter(self, record: logging.LogRecord) -> bool:
         """Adiciona model_name ao record se não existir, para evitar erros no formatter.
-        
+
         Args:
             record: LogRecord a ser filtrado
 
@@ -26,11 +30,12 @@ class ModelLogger(logging.LoggerAdapter):
     """
     Inclui model_name em 'extra' para aparecer no formatter.
     """
+
     def process(self, msg, kwargs):
         """
         Adiciona model_name em extra para o formatter.
-        
-        Args:            
+
+        Args:
             msg: mensagem original
             kwargs: kwargs originais do log, pode conter 'extra' com outras chaves
 
@@ -46,7 +51,7 @@ class ModelLogger(logging.LoggerAdapter):
 
 def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
     """Configura o logger com ModelLogger e EnsureModelNameFilter.
-    
+
     Args:
         name: nome do logger (default: __name__)
         level: nível de log (default: logging.INFO)
@@ -56,7 +61,6 @@ def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logge
     """
     logger = logging.getLogger(name)
 
-    # IMPORTANTE: adiciona filtro no root (pega tudo)
     root = logging.getLogger()
     has_filter = any(isinstance(f, EnsureModelNameFilter) for f in root.filters)
     if not has_filter:

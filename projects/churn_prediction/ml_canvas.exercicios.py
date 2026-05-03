@@ -54,14 +54,16 @@ class MLCanvas:
         Returns:
             True se o projeto está minimamente definido, False caso contrário.
         """
-        return all([
-            self.project_name,
-            self.business_problem,
-            self.ml_task,
-            self.target,
-            self.success_metrics_business,
-            self.success_metrics_technical,
-        ])
+        return all(
+            [
+                self.project_name,
+                self.business_problem,
+                self.ml_task,
+                self.target,
+                self.success_metrics_business,
+                self.success_metrics_technical,
+            ]
+        )
 
     def display(self) -> None:
         """Exibe o canvas formatado no log."""
@@ -91,13 +93,11 @@ def create_predition_churn_canvas() -> MLCanvas:
     """
     return MLCanvas(
         project_name="Previsão de Churn — Telco customer churn",
-        business_problem=(
-            "Aumento no churn de clientes em uma empresa de telecomunicações."
-        ),
+        business_problem=("Aumento no churn de clientes em uma empresa de telecomunicações."),
         ml_task="Classificação binária (churnou: 0/1)",
         success_metrics_business=[
             "ROI > 150% em 6 meses vs. 12 meses",
-            "Maximiazr valor líquido em $500K/ano"
+            "Maximiazr valor líquido em $500K/ano",
         ],
         success_metrics_technical=["PR-AUC deve ser pelo menos +2% maior que o baseline"],
         data_sources=["Telco-Customer-Churn.csv (IBM)"],

@@ -1,11 +1,13 @@
 import pandas as pd
 
+
 def test_pre_processing_basic_properties(df_clean) -> None:
     """
     Testa as propriedades básicas do DataFrame após o pré-processamento.
     """
     assert df_clean["customerID"].isna().sum() == 0
     assert pd.api.types.is_numeric_dtype(df_clean["TotalCharges"])
+
 
 def test_pre_processing_yes_no_cols_mapped(df_clean) -> None:
     """
@@ -19,8 +21,8 @@ def test_pre_processing_yes_no_cols_mapped(df_clean) -> None:
 def test_raw_df_fixture_is_dataframe(raw_df) -> None:
     """
     Testa se o fixture `raw_df` retorna um DataFrame.
-    Também verifica se o DataFrame tem o número esperado de linhas para o teste e se contém a coluna "Churn",
-    utilizada como target.
+    Também verifica se o DataFrame tem o número esperado de linhas para o teste e se contém a
+    coluna "Churn", utilizada como target.
     """
     assert isinstance(raw_df, pd.DataFrame)
     assert raw_df.shape[0] == 180

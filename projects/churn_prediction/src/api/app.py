@@ -23,6 +23,7 @@ Uso:
     Em outro terminal faz a chamada para enviar os dados: curl -s http://localhost:8000/ready
     insira o JSON de entrada e veja a resposta.
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -32,19 +33,19 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.jobs.predict import (
     PredictConfig,
-    resolve_model_uri,
     load_pyfunc_model,
     predict_proba_pyfunc,
+    resolve_model_uri,
 )
 
 try:
@@ -55,10 +56,14 @@ except Exception:
 logger = logging.getLogger("churn_api")
 logger.setLevel(logging.INFO)
 
-REQUEST_ID_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+REQUEST_ID_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
+)
+
 
 def get_request_id() -> str:
     return REQUEST_ID_CTX.get() or "-"
+
 
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -132,6 +137,7 @@ NUMERIC_COLS = [
     "TotalCharges",
 ]
 
+
 def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     for c in NUMERIC_COLS:
@@ -139,7 +145,9 @@ def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
             df[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
     return df
 
+
 REQUIRED_NUM = ["MonthlyCharges", "tenure"]
+
 
 def validate_required_numeric(X: pd.DataFrame, required_num: list[str] = REQUIRED_NUM) -> None:
     missing = [c for c in required_num if c not in X.columns]
@@ -182,7 +190,9 @@ def get_predict_config() -> PredictConfig:
     model_version = os.getenv("CHURN_MODEL_VERSION")
 
     return PredictConfig(
-        registry_uri=os.getenv("MLFLOW_REGISTRY_URI", os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")),
+        registry_uri=os.getenv(
+            "MLFLOW_REGISTRY_URI", os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+        ),
         model_uri=model_uri,
         model_name=model_name,
         model_version=model_version,
@@ -285,7 +295,9 @@ def readiness_check() -> dict[str, str]:
 
 
 @app.post("/predict", response_model=ChurnPredictResponse)
-def predict(request: ChurnPredictRequest, threshold: Optional[float] = None) -> ChurnPredictResponse:
+def predict(
+    request: ChurnPredictRequest, threshold: Optional[float] = None
+) -> ChurnPredictResponse:
     if "model" not in MODEL_STATE:
         raise HTTPException(status_code=503, detail="Modelo não disponível")
 

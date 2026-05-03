@@ -2,8 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.utils.constants import YES_NO_COLS, TARGET_COL, FEATURES_COLS
 from src.data.preprocess import pre_processing
+from src.utils.constants import FEATURES_COLS, TARGET_COL, YES_NO_COLS
+
 
 @pytest.fixture(scope="module")
 def raw_df() -> pd.DataFrame:
@@ -27,7 +28,14 @@ def raw_df() -> pd.DataFrame:
             "TechSupport": ["No", "No", "No", "Yes", "No", "No internet service"],
             "StreamingTV": ["No", "Yes", "No", "No", "Yes", "No internet service"],
             "StreamingMovies": ["No", "No", "Yes", "No", "Yes", "No internet service"],
-            "Contract": ["Month-to-month", "One year", "Month-to-month", "Two year", "Month-to-month", "Two year"],
+            "Contract": [
+                "Month-to-month",
+                "One year",
+                "Month-to-month",
+                "Two year",
+                "Month-to-month",
+                "Two year",
+            ],
             "PaperlessBilling": ["Yes", "No", "Yes", "Yes", "No", "No"],
             "PaymentMethod": [
                 "Electronic check",
@@ -55,6 +63,7 @@ def raw_df() -> pd.DataFrame:
     df = df.drop(columns=["_rep"])
     return df
 
+
 @pytest.fixture(scope="module")
 def df_clean(raw_df):
     """
@@ -62,14 +71,17 @@ def df_clean(raw_df):
     """
     return pre_processing(raw_df, YES_NO_COLS, "test", verbose=False)
 
+
 @pytest.fixture(scope="module")
 def X_y(df_clean):
     """
-    Seleciona as colunas de features e target do DataFrame pré-processado, para ser usado nos testes.
+    Seleciona as colunas de features e target do DataFrame pré-processado, para ser usado nos
+    testes.
     """
     X = df_clean[FEATURES_COLS].copy()
     y = df_clean[TARGET_COL].astype(int)
     return X, y
+
 
 @pytest.fixture(scope="module")
 def X_example(df_clean):

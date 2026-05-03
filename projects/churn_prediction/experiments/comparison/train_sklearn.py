@@ -19,41 +19,39 @@ import numpy as np
 import pandas as pd
 import skops.io as sio
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
 from sklearn.base import clone
-from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_classif
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.svm import SVC
 from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, mutual_info_classif
 from sklearn.linear_model import LogisticRegression
-
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 
+from src.data.feature_engineering import TelcoFeatureEngineeringBins
+from src.data.load_data import load_data_churn
+from src.data.preprocess import pre_processing
+from src.ml.data_utils import build_preprocessor, compute_metrics
 from src.utils.constants import (
+    FEATURES_COLS,
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
+    N_ITER_BY_MODEL,
+    PARAM_DISTS,
     PRIMARY_METRIC,
+    RANDOM_SEED,
     TARGET_COL,
     YES_NO_COLS,
-    RANDOM_SEED,
-    FEATURES_COLS,
-    PARAM_DISTS,
-    N_ITER_BY_MODEL,
 )
-from src.data.load_data import load_data_churn
-from src.data.preprocess import pre_processing
-from src.data.feature_engineering import TelcoFeatureEngineeringBins
-from src.ml.data_utils import compute_metrics, build_preprocessor
-
 
 logger = logging.getLogger(__name__)
 console = Console()
+
 
 def scoring_from_primary_metric(primary: str) -> str:
     """
@@ -95,7 +93,9 @@ def get_models() -> Dict[str, Any]:
         "dummy_most_frequent": DummyClassifier(strategy="most_frequent", random_state=RANDOM_SEED),
         "dummy_stratified": DummyClassifier(strategy="stratified", random_state=RANDOM_SEED),
         "logreg": LogisticRegression(random_state=RANDOM_SEED, max_iter=5000, solver="saga"),
-        "xgboost": XGBClassifier(random_state=RANDOM_SEED, n_jobs=-1, eval_metric="aucpr", verbosity=0),
+        "xgboost": XGBClassifier(
+            random_state=RANDOM_SEED, n_jobs=-1, eval_metric="aucpr", verbosity=0
+        ),
     }
 
 
@@ -186,12 +186,15 @@ def _merge_kbest_into_param_dist(param_dist: Any) -> Any:
     return param_dist
 
 
-def log_best_estimator_fold_metrics(best_estimator: Pipeline, X_df: pd.DataFrame, y: pd.Series) -> None:
+def log_best_estimator_fold_metrics(
+    best_estimator: Pipeline, X_df: pd.DataFrame, y: pd.Series
+) -> None:
     """
     Gera predições out-of-fold (OOF) com o `best_estimator` e loga métricas por fold no MLflow.
 
     Args:
-        best_estimator: Pipeline treinável (pipeline completo), que será clonado e treinado fold a fold.
+        best_estimator: Pipeline treinável (pipeline completo), que será clonado e
+        treinado fold a fold.
         X_df: DataFrame com features.
         y: Série com target.
     """
@@ -252,7 +255,10 @@ def run_randomsearch_for_model(
     """
     pipe = Pipeline(
         steps=[
-            ("feature_engineering", TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10)),
+            (
+                "feature_engineering",
+                TelcoFeatureEngineeringBins(monthlycharges_q=5, totalcharges_q=10),
+            ),
             ("preprocess", build_preprocessor()),
             ("drop_constant", VarianceThreshold(threshold=0.0)),
             ("select_kbest", SelectKBest(score_func=mutual_info_classif, k="all")),
@@ -371,7 +377,10 @@ def main():
     X_df = df_clean[FEATURES_COLS]
 
     console.print(
-        f"[dim]Dataset: {X_df.shape[0]} amostras, {X_df.shape[1]} features, {N_FOLDS}-fold CV[/dim]\n"
+        (
+            f"[dim]Dataset: {X_df.shape[0]} amostras, {X_df.shape[1]} features, "
+            f"{N_FOLDS}-fold CV[/dim]\n"
+        )
     )
 
     models = get_models()

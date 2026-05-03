@@ -1,11 +1,14 @@
-import numpy as np
-import torch
+from typing import Any
+
 import mlflow
 import mlflow.pyfunc
-import skops.io as sio
-from typing import Any
+import numpy as np
 import pandas as pd
-from src.utils.constants import TRUSTED_TYPES    
+import skops.io as sio
+import torch
+
+from src.utils.constants import TRUSTED_TYPES
+
 
 class ChurnModel(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
@@ -25,8 +28,9 @@ class ChurnModel(mlflow.pyfunc.PythonModel):
 
         Args:
             context (Any): Contexto do MLflow, não utilizado aqui.
-            model_input (pd.DataFrame): DataFrame de entrada, sem as colunas de features engenheiradas.
-        
+            model_input (pd.DataFrame): DataFrame de entrada, sem as colunas de features
+                engenheiradas.
+
         Returns:
             np.ndarray: Array de probabilidades de churn para cada linha do DataFrame de entrada.
         """
@@ -45,5 +49,6 @@ class ChurnModel(mlflow.pyfunc.PythonModel):
             probs = torch.sigmoid(logits).cpu().numpy()
 
         return probs
+
 
 mlflow.models.set_model(ChurnModel())

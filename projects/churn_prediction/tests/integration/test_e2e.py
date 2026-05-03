@@ -6,6 +6,7 @@ from sklearn.linear_model import LogisticRegression
 from src.core.models.trainer import ChurnModelTrainer
 from src.jobs.train import log_xgb_end_to_end_pyfunc
 
+
 @pytest.mark.integration
 def test_e2e_train_log_load_predict(tmp_path, X_y, request) -> None:
     """

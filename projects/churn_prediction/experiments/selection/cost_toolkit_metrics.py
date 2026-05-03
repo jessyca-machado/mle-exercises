@@ -22,10 +22,11 @@ Uso:
 Para visualizar:
     mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
 """
+
 import logging
 import tempfile
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import mlflow
 import numpy as np
@@ -33,18 +34,18 @@ from rich.console import Console
 from rich.table import Table
 from sklearn.metrics import confusion_matrix
 
+from src.entrypoints.cli import parse_args
+from src.ml.cost_utils import CostSpec, sweep_thresholds_cost
+from src.ml.mlflow_selection_utils import (
+    get_latest_runs_with_mlp_from_refit,
+    has_any_oof,
+    run_display_name,
+)
 from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
 )
-from src.ml.mlflow_selection_utils import (
-    get_latest_runs_with_mlp_from_refit,
-    run_display_name,
-    has_any_oof,
-)
-from src.ml.cost_utils import CostSpec, sweep_thresholds_cost
-from src.entrypoints.cli import parse_args
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -53,17 +54,13 @@ console = Console()
 @dataclass(frozen=True)
 class BusinessScenario:
     """Especificação de custos/benefícios do cenário de negócio."""
+
     benefit_tp: float = 10.0
     cost_fp: float = 1.0
     cost_fn: float = 5.0
 
 
-def net_value_from_confusion(
-        tp: int,
-        fp: int,
-        fn: int,
-        scenario: BusinessScenario
-) -> float:
+def net_value_from_confusion(tp: int, fp: int, fn: int, scenario: BusinessScenario) -> float:
     """
     Calcula o valor líquido (net value) a partir de TP/FP/FN e de um cenário de negócio.
 
@@ -79,11 +76,7 @@ def net_value_from_confusion(
     return (tp * scenario.benefit_tp) - (fp * scenario.cost_fp) - (fn * scenario.cost_fn)
 
 
-def roi_from_net_value(
-        net_value: float,
-        total_cost: float,
-        on_zero_cost: str = "nan"
-) -> float:
+def roi_from_net_value(net_value: float, total_cost: float, on_zero_cost: str = "nan") -> float:
     """
     Calcula ROI (retorno sobre investimento) a partir do valor líquido e do custo total.
     Quando total_cost <= 0, o comportamento depende de `on_zero_cost`.
@@ -301,7 +294,8 @@ def net_value_at_topk(
 
 def summarize_folds(values: List[float]) -> Dict[str, float]:
     """
-    Resume uma lista de valores por fold em estatísticas descritivas: média, desvio padrão, mínimo e máximo.
+    Resume uma lista de valores por fold em estatísticas descritivas: média, desvio padrão, mínimo
+        e máximo.
     Valores não finitos (NaN/inf) são removidos antes do cálculo.
 
     Args:
@@ -374,7 +368,9 @@ def main():
 
     args = parse_args()
 
-    scenario = BusinessScenario(benefit_tp=args.benefit_tp, cost_fp=args.cost_fp, cost_fn=args.cost_fn)
+    scenario = BusinessScenario(
+        benefit_tp=args.benefit_tp, cost_fp=args.cost_fp, cost_fn=args.cost_fn
+    )
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = mlflow.tracking.MlflowClient()
@@ -403,14 +399,16 @@ def main():
             console.print("[red]Nenhum run passou o gate.[/red]")
             return
 
-
     if len(runs) < 2:
         console.print("[red]Precisa de pelo menos 2 runs candidatos (com artifacts OOF).[/red]")
         return
 
     console.rule("[bold]Business Evaluation — Net Value / ROI (OOF por fold)[/bold]")
     console.print(
-        f"[dim]Folds={N_FOLDS} | scenario: benefit_tp={scenario.benefit_tp}, cost_fp={scenario.cost_fp}, cost_fn={scenario.cost_fn}[/dim]"
+        (
+            f"[dim]Folds={N_FOLDS} | scenario: benefit_tp={scenario.benefit_tp}, "
+            f"cost_fp={scenario.cost_fp}, cost_fn={scenario.cost_fn}[/dim]"
+        )
     )
 
     results = []
@@ -421,7 +419,12 @@ def main():
         console.print(name, r.info.run_id, ok)
 
         if not has_any_oof(client, r.info.run_id):
-            console.print(f"[yellow]Pulando {name} (run_id={r.info.run_id}): sem artifacts OOF em 'oof/'.[/yellow]")
+            console.print(
+                (
+                    f"[yellow]Pulando {name} (run_id={r.info.run_id}): sem artifacts OOF em "
+                    f"'oof/'.[/yellow]"
+                )
+            )
             continue
 
         y_true_folds, y_proba_folds = load_oof_for_run(client, r.info.run_id)
@@ -480,13 +483,19 @@ def main():
             thr_sum = summarize_folds([t for t in fold_thresholds if np.isfinite(t)])
             meta = {
                 "mode": "sweep_thresholds",
-                "best_threshold": float(thr_sum["mean"]) if np.isfinite(thr_sum["mean"]) else float("nan"),
-                "best_threshold_std": float(thr_sum["std"]) if np.isfinite(thr_sum["std"]) else float("nan"),
+                "best_threshold": float(thr_sum["mean"])
+                if np.isfinite(thr_sum["mean"])
+                else float("nan"),
+                "best_threshold_std": float(thr_sum["std"])
+                if np.isfinite(thr_sum["std"])
+                else float("nan"),
             }
 
         elif args.topk and args.topk > 0:
             for y_true, y_proba in zip(y_true_folds, y_proba_folds):
-                m = net_value_at_topk(y_true, y_proba, float(args.topk), scenario, args.roi_on_zero_cost)
+                m = net_value_at_topk(
+                    y_true, y_proba, float(args.topk), scenario, args.roi_on_zero_cost
+                )
                 fold_net_values.append(m["net_value"])
                 fold_rois.append(m["roi"])
                 fold_recalls.append(recall_from_confusion(m["tp"], m["fn"]))
@@ -505,14 +514,16 @@ def main():
         roi_sum = summarize_folds(fold_rois)
         rec_sum = summarize_folds(fold_recalls)
 
-        results.append({
-            "run": name,
-            "run_id": r.info.run_id,
-            "net_value": nv_sum,
-            "roi": roi_sum,
-            "recall": rec_sum,
-            **meta
-        })
+        results.append(
+            {
+                "run": name,
+                "run_id": r.info.run_id,
+                "net_value": nv_sum,
+                "roi": roi_sum,
+                "recall": rec_sum,
+                **meta,
+            }
+        )
 
         if args.log_mlflow:
             mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
@@ -528,7 +539,9 @@ def main():
             parent_recall_name = f"business{tag}.{mode_id}.recall"
 
             with mlflow.start_run(run_id=r.info.run_id):
-                for fold_idx, (nv, roi, rec) in enumerate(zip(fold_net_values, fold_rois, fold_recalls)):
+                for fold_idx, (nv, roi, rec) in enumerate(
+                    zip(fold_net_values, fold_rois, fold_recalls)
+                ):
                     mlflow.log_metric(parent_nv_name, float(nv), step=fold_idx)
                     mlflow.log_metric(parent_roi_name, float(roi), step=fold_idx)
                     mlflow.log_metric(parent_recall_name, float(rec), step=fold_idx)
@@ -543,12 +556,12 @@ def main():
                 if meta["mode"] == "sweep_thresholds":
                     mlflow.log_metric(
                         f"business{tag}.sweep_foldwise.best_threshold_mean",
-                        float(meta["best_threshold"])
+                        float(meta["best_threshold"]),
                     )
                     mlflow.log_metric(
                         f"business{tag}.sweep_foldwise.best_threshold_std",
-                        float(meta.get("best_threshold_std", float("nan")))
-                    )  
+                        float(meta.get("best_threshold_std", float("nan"))),
+                    )
 
                 with mlflow.start_run(run_name=f"business_eval_{mode_id}", nested=True):
                     mlflow.log_param("business_mode", meta["mode"])
@@ -619,13 +632,18 @@ def main():
     )
 
     console.print(
-        "\n[dim]Para testar estatisticamente no compare_models.py, a métrica no PARENT run agora tem namespace.\n"
-        "Exemplo (topk=0.10): business.topk_0.1000.net_value\n"
-        "Então rode:\n"
-        "  python experiments/selection/compare_models.py --metric business.topk_0.1000.net_value\n"
-        "Ou para sweep (best_thr=0.05):\n"
-        "  python experiments/selection/compare_models.py --metric business.sweep_foldwise.net_value\n"
-        "[/dim]"
+        (
+            "\n[dim]Para testar estatisticamente no compare_models.py, a métrica no PARENT run "
+            "agora tem namespace.\n"
+            "Exemplo (topk=0.10): business.topk_0.1000.net_value\n"
+            "Então rode:\n"
+            "  python experiments/selection/compare_models.py --metric "
+            "business.topk_0.1000.net_value\n"
+            "Ou para sweep (best_thr=0.05):\n"
+            "  python experiments/selection/compare_models.py --metric "
+            "business.sweep_foldwise.net_value\n"
+            "[/dim]"
+        )
     )
 
 

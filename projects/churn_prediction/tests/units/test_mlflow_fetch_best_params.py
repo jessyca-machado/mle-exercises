@@ -1,18 +1,22 @@
-import pytest
-import pandas as pd
 import mlflow
+import pandas as pd
+import pytest
 
 from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 
 
-def test_fetch_best_xgb_params_from_mlflow_parses_model_and_kbest(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_best_xgb_params_from_mlflow_parses_model_and_kbest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
-    Procurar o melhor resultado de uma busca randomizada no MLflow e verificar se os parâmetros do modelo XGBoost
-    e do SelectKBest são corretamente extraídos e convertidos para os tipos adequados.
+    Procurar o melhor resultado de uma busca randomizada no MLflow e verificar se os parâmetros do
+    modelo XGBoost e do SelectKBest são corretamente extraídos e convertidos para os tipos
+    adequados.
 
     Args:
         monkeypatch (pytest.MonkeyPatch): Fixture do pytest para mock de atributos e métodos.
     """
+
     class FakeExp:
         experiment_id = "123"
 

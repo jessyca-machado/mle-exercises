@@ -10,7 +10,8 @@ import mlflow
 
 def setup_mlflow(default_experiment: str) -> None:
     """
-    Configura o MLflow para usar o tracking URI e o nome do experimento definidos nas variáveis de ambiente.
+    Configura o MLflow para usar o tracking URI e o nome do experimento definidos nas variáveis de
+        ambiente.
     """
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
     experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", default_experiment)
@@ -100,8 +101,7 @@ def _safe_log_metrics(logger, metrics: Dict[str, Any]) -> None:
 
         except Exception as e:
             logger.exception(
-                "Falha ao logar metric '%s' (valor=%r tipo=%s): %s",
-                k, v, type(v).__name__, e
+                "Falha ao logar metric '%s' (valor=%r tipo=%s): %s", k, v, type(v).__name__, e
             )
             try:
                 mlflow.set_tag(f"metric_error_{k}", f"{type(v).__name__}: {str(e)[:180]}")
