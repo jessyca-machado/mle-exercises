@@ -12,6 +12,9 @@
 ├── .vscode
 │   └── settings.json
 ├── README.md
+├── logs
+│   ├── dbt.log
+│   └── query_log.sql
 └── projects
     ├── README.md
     └── churn_prediction
@@ -35,6 +38,8 @@
         ├── infra
         │   ├── nginx
         │   │   └── mlflow.conf
+        │   ├── postgres
+        │   │   └── init
         │   └── prometheus
         │       └── prometheus.yml
         ├── ml_canvas.exercicios.py
@@ -66,6 +71,7 @@
         │   │   └── cli.py
         │   ├── infra
         │   │   ├── __init__.py
+        │   │   ├── db
         │   │   └── mlflow
         │   ├── jobs
         │   │   ├── __init__.py
@@ -105,6 +111,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-29 directories, 71 files
+33 directories, 73 files
 ```
 <!-- TREE:END -->
