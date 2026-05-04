@@ -33,6 +33,7 @@ volumes:
   grafana_data:
 
 services:
+
   postgres:
     image: postgres:16-alpine
     container_name: churn-postgres
@@ -44,6 +45,7 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
       - churn-net
     healthcheck:
@@ -134,6 +136,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minio12345
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       AWS_REGION: us-east-1
+      PREDICTIONS_DB_DSN: postgresql://mlflow:mlflow@postgres:5432/churn
     ports:
       - "8000:8000"
     networks:

@@ -4,10 +4,10 @@ Uso:
     # comparação normal, utilizando como baleline a regressão logística:
     python experiments/selection/compare_models.py
 
-    # comparação final, levando em consideração o valor líquido (net_value) dos modelos com recall 
+    # comparação final, levando em consideração o valor líquido (net_value) dos modelos com recall
         de treino >= 0.8:
     python experiments/selection/compare_models.py \
-    --metric business.sweep_foldwise.net_value \
+    --metric recall \
     --gate-best-cv-score 0.8 \
     --gate-metric-name best_cv_score
 
