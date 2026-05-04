@@ -16,7 +16,10 @@
     ├── README.md
     └── churn_prediction
         ├── .pre-commit-config.yaml
+        ├── Dockerfile.api
+        ├── Dockerfile.mlflow
         ├── README.md
+        ├── docker-compose.yml
         ├── experiments
         │   ├── __init__.py
         │   ├── comparison
@@ -29,11 +32,17 @@
         │       ├── __init__.py
         │       ├── compare_models.py
         │       └── cost_toolkit_metrics.py
+        ├── infra
+        │   ├── nginx
+        │   │   └── mlflow.conf
+        │   └── prometheus
+        │       └── prometheus.yml
         ├── ml_canvas.exercicios.py
         ├── notebooks
         │   └── eda.ipynb
         ├── pyproject.toml
         ├── requirements-mlflow.txt
+        ├── requirements-runtime.txt
         ├── requirements.txt
         ├── scripts
         │   ├── __init__.py
@@ -96,6 +105,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-26 directories, 65 files
+29 directories, 71 files
 ```
 <!-- TREE:END -->
