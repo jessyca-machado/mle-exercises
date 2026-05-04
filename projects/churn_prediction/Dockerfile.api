@@ -1,0 +1,66 @@
+# FastAPI em produção com Gunicorn + UvicornWorker.
+# Este Dockerfile assume que:
+# - requirements.txt e requirements-mlflow.txt estão em: projects/churn_prediction/
+# - o código está em: projects/churn_prediction/src
+#
+# Build (a partir da RAIZ do repo):
+#   docker build -f projects/churn_prediction/Dockerfile.api -t churn-api projects/churn_prediction
+#
+# Compose:
+#   no docker-compose, use:
+#     build:
+#       context: ./projects/churn_prediction
+#       dockerfile: Dockerfile.api
+
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# curl ajuda no healthcheck do docker-compose; build-essential para deps com compilação (se houver)
+RUN apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
+    && apt-get install -y --no-install-recommends curl build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copia requirements primeiro para aproveitar cache
+COPY requirements-runtime.txt /app/requirements-runtime.txt
+COPY requirements-mlflow.txt /app/requirements-mlflow.txt
+
+RUN pip install --upgrade pip \
+    && pip install -r /app/requirements-runtime.txt \
+    && pip install -r /app/requirements-mlflow.txt \
+    && pip install gunicorn
+
+# Copia o código da aplicação
+COPY src /app/src
+
+# Usuário não-root
+RUN useradd -m -u 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Config por env vars (pode sobrescrever no compose)
+ENV WEB_CONCURRENCY=2 \
+    GUNICORN_TIMEOUT=120 \
+    GUNICORN_GRACEFUL_TIMEOUT=30 \
+    GUNICORN_KEEPALIVE=5 \
+    GUNICORN_LOG_LEVEL=info
+
+CMD ["sh", "-c", "\
+gunicorn src.api.app:app \
+    -k uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000 \
+    --workers ${WEB_CONCURRENCY} \
+    --timeout ${GUNICORN_TIMEOUT} \
+    --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} \
+    --keep-alive ${GUNICORN_KEEPALIVE} \
+    --log-level ${GUNICORN_LOG_LEVEL} \
+    --access-logfile - \
+    --error-logfile - \
+"]

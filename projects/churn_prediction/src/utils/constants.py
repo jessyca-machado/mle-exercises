@@ -13,7 +13,7 @@ Observação:
         - Se alterar pipeline/artifacts do PyFunc, atualizar TRUSTED_TYPES.
         - Se alterar feature engineering, atualizar listas de colunas (NUM/CAT/BOL/BIN).
 """
-
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -136,9 +136,10 @@ TRUSTED_TYPES: list[str] = [
 ]
 
 # MLflow
-MLFLOW_TRACKING_URI: str = "sqlite:///mlflow.db"
-MLFLOW_EXPERIMENT_NAME: str = "churn-model-comparison"
-MLFLOW_ARTIFACT_ROOT: str = "./mlartifacts"
+MLFLOW_TRACKING_URI: str = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+MLFLOW_REGISTRY_URI: str = os.getenv("MLFLOW_REGISTRY_URI", MLFLOW_TRACKING_URI)
+MLFLOW_EXPERIMENT_NAME: str = os.getenv("MLFLOW_EXPERIMENT_NAME", "churn-model-comparison")
+MLFLOW_ARTIFACT_ROOT: str = os.getenv("MLFLOW_ARTIFACT_ROOT", "./mlartifacts")
 
 # Paths do projeto
 PROJECT_ROOT: Path = Path(__file__).parent.parent

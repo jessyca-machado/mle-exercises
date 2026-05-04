@@ -171,15 +171,15 @@ def run_train_pipeline(
     Returns:
         Dicionário com informações do run, modelo e melhores parâmetros.
     """
-    from logging import config
-
-    setup_mlflow_sqlite(
-        tracking_uri=config.tracking_uri,
-        experiment_name=config.experiment_name,
-        artifact_root=MLFLOW_ARTIFACT_ROOT,
-    )
-    mlflow.set_tracking_uri(config.tracking_uri)
-    mlflow.set_registry_uri(config.registry_uri)
+    if str(config.tracking_uri).startswith("sqlite:"):
+        setup_mlflow_sqlite(
+            tracking_uri=config.tracking_uri,
+            experiment_name=config.experiment_name,
+            artifact_root=MLFLOW_ARTIFACT_ROOT,
+        )
+    else:
+        mlflow.set_tracking_uri(config.tracking_uri)
+        mlflow.set_experiment(config.experiment_name)
 
     best = fetch_best_xgb_params_from_mlflow(
         experiment_name=config.experiment_name,
