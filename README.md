@@ -12,9 +12,6 @@
 ├── .vscode
 │   └── settings.json
 ├── README.md
-├── logs
-│   ├── dbt.log
-│   └── query_log.sql
 └── projects
     ├── README.md
     └── churn_prediction
@@ -111,6 +108,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 73 files
+32 directories, 71 files
 ```
 <!-- TREE:END -->
