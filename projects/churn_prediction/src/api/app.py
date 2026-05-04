@@ -37,11 +37,12 @@ from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.infra.db.predictions_repo import PredictionRecord, PredictionsRepository
 from src.jobs.predict import (
     PredictConfig,
     load_pyfunc_model,
@@ -202,6 +203,13 @@ def get_predict_config() -> PredictConfig:
     )
 
 
+def get_predictions_repo() -> PredictionsRepository | None:
+    dsn = os.getenv("PREDICTIONS_DB_DSN")
+    if not dsn:
+        return None
+    return PredictionsRepository(dsn)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = get_predict_config()
@@ -302,21 +310,22 @@ def readiness_check() -> dict[str, str]:
 
 @app.post("/predict", response_model=ChurnPredictResponse)
 def predict(
-    request: ChurnPredictRequest, threshold: Optional[float] = None
+    request: ChurnPredictRequest,
+    background_tasks: BackgroundTasks,
+    threshold: Optional[float] = None,
 ) -> ChurnPredictResponse:
     if "model" not in MODEL_STATE:
         raise HTTPException(status_code=503, detail="Modelo não disponível")
 
     model = MODEL_STATE["model"]
     model_uri: str = MODEL_STATE.get("model_uri", "")
-
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(threshold) if threshold is not None else default_th
 
     payload = request.model_dump()
     payload["customer_id"] = normalize_customer_id(payload["customer_id"])
 
-    X = to_model_df(request.model_dump())
+    X = to_model_df(payload)
     X = coerce_numeric(X)
     validate_required_numeric(X)
 
@@ -324,6 +333,20 @@ def predict(
     y_prob = predict_proba_pyfunc(model, X, proba_col="y_pred_proba")
     y_pred = (y_prob >= th).astype(int)
     latency_ms = (time.perf_counter() - start) * 1000
+
+    repo = get_predictions_repo()
+    if repo is not None:
+        rec = PredictionRecord(
+            request_id=get_request_id(),
+            batch_id=None,
+            item_index=0,
+            model_uri=model_uri,
+            threshold=th,
+            y_pred=int(y_pred[0]),
+            y_pred_proba=float(y_prob[0]),
+            features=payload,
+        )
+        background_tasks.add_task(repo.insert_many, [rec])
 
     logger.info(
         "inference_completed",
@@ -347,17 +370,19 @@ def predict(
 
 
 @app.post("/predict_batch", response_model=ChurnBatchPredictResponse)
-def predict_batch(payload: ChurnBatchPredictRequest) -> ChurnBatchPredictResponse:
+def predict_batch(
+    payload: ChurnBatchPredictRequest,
+    background_tasks: BackgroundTasks,
+) -> ChurnBatchPredictResponse:
     if "model" not in MODEL_STATE:
         raise HTTPException(status_code=503, detail="Modelo não disponível")
 
     model = MODEL_STATE["model"]
     model_uri: str = MODEL_STATE.get("model_uri", "")
-
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(payload.threshold) if payload.threshold is not None else default_th
 
-    items = []
+    items: list[dict[str, Any]] = []
     for item in payload.items:
         d = item.model_dump()
         d["customer_id"] = normalize_customer_id(d["customer_id"])
@@ -383,6 +408,25 @@ def predict_batch(payload: ChurnBatchPredictRequest) -> ChurnBatchPredictRespons
             "model_uri": model_uri,
         },
     )
+
+    repo = get_predictions_repo()
+    if repo is not None:
+        req_id = get_request_id()
+        batch_id = str(uuid.uuid4())
+        records = [
+            PredictionRecord(
+                request_id=req_id,
+                batch_id=batch_id,
+                item_index=i,
+                model_uri=model_uri,
+                threshold=th,
+                y_pred=int(yp),
+                y_pred_proba=float(pp),
+                features=item,
+            )
+            for i, (item, yp, pp) in enumerate(zip(items, y_pred, y_prob, strict=False))
+        ]
+        background_tasks.add_task(repo.insert_many, records)
 
     preds = [
         ChurnPredictResponse(
