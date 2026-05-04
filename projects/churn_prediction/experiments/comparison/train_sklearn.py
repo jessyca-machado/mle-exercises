@@ -39,6 +39,7 @@ from src.ml.data_utils import build_preprocessor, compute_metrics
 from src.utils.constants import (
     FEATURES_COLS,
     MLFLOW_EXPERIMENT_NAME,
+    MLFLOW_REGISTRY_URI,
     MLFLOW_TRACKING_URI,
     N_FOLDS,
     N_ITER_BY_MODEL,
@@ -367,6 +368,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_registry_uri(MLFLOW_REGISTRY_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
     console.print("\n[bold]Carregando dataset...[/bold]")

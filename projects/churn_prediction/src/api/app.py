@@ -15,7 +15,7 @@ Execução (dev):
 Execução (manual):
     export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
     export MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
-    export CHURN_MODEL_URI="models:/churn_xgb/13"
+    export CHURN_MODEL_URI="models:/churn_xgb/15"
     export CHURN_THRESHOLD="0.5"
     uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
 
@@ -37,7 +37,8 @@ from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -232,6 +233,11 @@ app = FastAPI(
 )
 
 app.add_middleware(LatencyLoggingMiddleware)
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 class ChurnPredictRequest(BaseModel):

@@ -1,0 +1,5 @@
+# Dockerfile.mlflow
+FROM ghcr.io/mlflow/mlflow:v3.10.1
+
+# Postgres backend store + S3/MinIO artifacts
+RUN pip install --no-cache-dir psycopg2-binary boto3
