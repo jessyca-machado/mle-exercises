@@ -134,7 +134,7 @@ def log_xgb_end_to_end_pyfunc(
     signature = infer_signature(input_example, output_example)
 
     model_info = mlflow.pyfunc.log_model(
-        name=name,
+        artifact_path=name,
         python_model=str(Path(pyfunc_code_path).resolve()),
         artifacts={
             "feature_engineering": str(fe_path.resolve()),

@@ -112,7 +112,7 @@ def log_end_to_end_model(
 
     code_path = Path("src/ml/churn_pyfunc_mlp.py").resolve()
     mlflow.pyfunc.log_model(
-        name="model",
+        artifact_path="model",
         python_model=str(code_path),
         artifacts={
             "feature_engineering": str(fe_path.resolve()),
