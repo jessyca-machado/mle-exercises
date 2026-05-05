@@ -1,6 +1,6 @@
 # FastAPI em produção com Gunicorn + UvicornWorker.
 # Este Dockerfile assume que:
-# - requirements.txt e requirements-mlflow.txt estão em: projects/churn_prediction/
+# - puproject.toml e uv.lock estão em: projects/churn_prediction/
 # - o código está em: projects/churn_prediction/src
 #
 # Build (a partir da RAIZ do repo):
@@ -12,31 +12,38 @@
 #       context: ./projects/churn_prediction
 #       dockerfile: Dockerfile.api
 
-FROM python:3.11-slim-bookworm
+FROM ghcr.io/astral-sh/uv:0.8.8 AS uvbin
+
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_NO_PROGRESS=1
 
-# curl ajuda no healthcheck do docker-compose; build-essential para deps com compilação (se houver)
 RUN apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
-    && apt-get install -y --no-install-recommends curl build-essential \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        build-essential \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copia requirements primeiro para aproveitar cache
-COPY requirements-runtime.txt /app/requirements-runtime.txt
-COPY requirements-mlflow.txt /app/requirements-mlflow.txt
+# copia o binário do uv para o PATH
+COPY --from=uvbin /uv /usr/local/bin/uv
 
-RUN pip install --upgrade pip \
-    && pip install -r /app/requirements-runtime.txt \
-    && pip install -r /app/requirements-mlflow.txt \
-    && pip install gunicorn
+# 2) Copia apenas manifests primeiro (cache)
+COPY pyproject.toml uv.lock README.md requirements-mlflow.txt /app/
 
-# Copia o código da aplicação
+# 3) Instala dependências travadas do lockfile (com dev)
+RUN uv sync --frozen --extra dev
+
+# 4) Copia o código depois
 COPY src /app/src
+
+# utilizar experiments dentro do container:
+COPY experiments /app/experiments
 
 # Usuário não-root
 RUN useradd -m -u 10001 appuser \
@@ -45,15 +52,17 @@ USER appuser
 
 EXPOSE 8000
 
-# Config por env vars (pode sobrescrever no compose)
 ENV WEB_CONCURRENCY=2 \
     GUNICORN_TIMEOUT=120 \
     GUNICORN_GRACEFUL_TIMEOUT=30 \
     GUNICORN_KEEPALIVE=5 \
-    GUNICORN_LOG_LEVEL=info
+    GUNICORN_LOG_LEVEL=info \
+    PYTHONPATH=/app
 
+# IMPORTANTE:
+# uv cria venv em /app/.venv por padrão; então rode usando o python dela
 CMD ["sh", "-c", "\
-gunicorn src.api.app:app \
+/app/.venv/bin/gunicorn src.api.app:app \
     -k uvicorn.workers.UvicornWorker \
     --bind 0.0.0.0:8000 \
     --workers ${WEB_CONCURRENCY} \

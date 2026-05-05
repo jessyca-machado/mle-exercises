@@ -132,7 +132,7 @@ services:
     environment:
       MLFLOW_TRACKING_URI: http://mlflow-proxy
       MLFLOW_REGISTRY_URI: http://mlflow-proxy
-      CHURN_MODEL_URI: ${CHURN_MODEL_URI:-models:/churn_xgb/1}
+      CHURN_MODEL_URI: ${CHURN_MODEL_URI:-models:/churn_xgb/2}
       CHURN_THRESHOLD: ${CHURN_THRESHOLD:-0.5}
       AWS_ACCESS_KEY_ID: minio
       AWS_SECRET_ACCESS_KEY: minio12345
