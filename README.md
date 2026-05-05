@@ -19,6 +19,7 @@
         ├── .pre-commit-config.yaml
         ├── Dockerfile.api
         ├── Dockerfile.mlflow
+        ├── Makefile
         ├── README.md
         ├── docker-compose.yml
         ├── docs
@@ -115,6 +116,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 77 files
+33 directories, 78 files
 ```
 <!-- TREE:END -->
