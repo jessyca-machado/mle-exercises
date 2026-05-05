@@ -45,6 +45,9 @@ COPY src /app/src
 # utilizar experiments dentro do container:
 COPY experiments /app/experiments
 
+# testes dentro do container:
+COPY tests /app/tests
+
 # Usuário não-root
 RUN useradd -m -u 10001 appuser \
     && chown -R appuser:appuser /app
