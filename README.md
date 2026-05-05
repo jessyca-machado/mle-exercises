@@ -22,7 +22,8 @@
         ├── README.md
         ├── docker-compose.yml
         ├── docs
-        │   └── archtecture.md
+        │   ├── archtecture.md
+        │   └── monitoring.md
         ├── experiments
         │   ├── __init__.py
         │   ├── comparison
@@ -114,6 +115,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 76 files
+33 directories, 77 files
 ```
 <!-- TREE:END -->
