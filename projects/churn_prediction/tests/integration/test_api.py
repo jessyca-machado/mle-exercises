@@ -5,9 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sklearn.linear_model import LogisticRegression
 
-from src.api.app import app
 from src.core.models.trainer import ChurnModelTrainer
 from src.jobs.train import log_xgb_end_to_end_pyfunc
+
+TEST_API_KEY = "test-api-key"
 
 
 def _setup_temp_mlflow(tmp_path) -> tuple[str, str]:
@@ -81,16 +82,28 @@ def api_client(tmp_path_factory, X_y, request) -> TestClient:
         - treina + registra um modelo
         - sobe a API via TestClient apontando para esse modelo
     """
+    # env obrigatório pra auth (lido no import do app)
+    os.environ["CHURN_API_KEY"] = TEST_API_KEY
+    # (opcional) permite rodar no host sem Redis:
+    os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
+
     tmp_path = tmp_path_factory.mktemp("api_hermetic")
     tracking_uri, registry_uri = _setup_temp_mlflow(tmp_path)
+
     X, y = X_y
     registered_name = "churn_api_hermetic_model"
     model_uri = _train_and_register_pyfunc_model(X, y, request, registered_name=registered_name)
+
     os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
     os.environ["MLFLOW_REGISTRY_URI"] = registry_uri
     os.environ["CHURN_MODEL_URI"] = model_uri
     os.environ["CHURN_THRESHOLD"] = "0.5"
+
+    # Import do app DEPOIS de setar env vars
+    from src.api.app import app
+
     with TestClient(app) as client:
+        client.headers.update({"X-API-Key": TEST_API_KEY})
         yield client
 
 

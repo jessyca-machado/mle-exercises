@@ -269,7 +269,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-limiter = Limiter(key_func=get_remote_address, storage_uri="redis://redis:6379")
+RATE_LIMIT_STORAGE_URI = os.getenv("RATE_LIMIT_STORAGE_URI", "redis://redis:6379")
+limiter = Limiter(key_func=get_remote_address, storage_uri=RATE_LIMIT_STORAGE_URI)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -346,7 +347,8 @@ def readiness_check(request: Request) -> dict[str, str]:
 @app.post("/predict", response_model=ChurnPredictResponse, dependencies=[Depends(verify_api_key)])
 @limiter.limit("30/minute")
 def predict(
-    request: ChurnPredictRequest,
+    request: Request,
+    payload: ChurnPredictRequest,
     background_tasks: BackgroundTasks,
     threshold: Optional[float] = None,
 ) -> ChurnPredictResponse:
@@ -358,10 +360,9 @@ def predict(
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(threshold) if threshold is not None else default_th
 
-    payload = request.model_dump()
-    payload["customer_id"] = normalize_customer_id(payload["customer_id"])
-
-    X = to_model_df(payload)
+    features = payload.model_dump()
+    features["customer_id"] = normalize_customer_id(features["customer_id"])
+    X = to_model_df(features)
     X = coerce_numeric(X)
     validate_required_numeric(X)
 
@@ -384,7 +385,7 @@ def predict(
             threshold=th,
             y_pred=int(y_pred[0]),
             y_pred_proba=float(y_prob[0]),
-            features=payload,
+            features=features,
         )
         background_tasks.add_task(_safe_insert_many, repo, [rec])
 

@@ -85,7 +85,7 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 
 [tool.pytest.ini_options]
-testpaths = ["src/tests"]
+testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "integration: testes E2E/integracao (podem ser mais lentos)",
