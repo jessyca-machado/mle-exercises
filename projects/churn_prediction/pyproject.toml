@@ -11,7 +11,7 @@ dependencies = [
     "pip>=24.0",
     "torch==2.11.0",
     "scikit-learn>=1.2,<2.0",
-    "mlflow>=2.8",
+    "mlflow>=2.8,<3.0",
     "fastapi>=0.111",
     "uvicorn>=0.23",
     "pandas>=2.2",
@@ -46,7 +46,7 @@ dependencies = [
 
 [dependency-groups]
 mlflow = [
-    "mlflow>=2.8",
+    "mlflow>=2.8,<3.0",
     "numpy>=2.0",
     "pandas>=2.2",
     "scikit-learn>=1.2,<2.0",
@@ -90,10 +90,19 @@ addopts = "-q"
 markers = [
     "integration: testes E2E/integracao (podem ser mais lentos)",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:mlflow\\..*",
+]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+exclude = [
+    "mlruns",
+    "tests/mlruns",
+    ".venv",
+    ".pytest_cache",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

@@ -18,3 +18,4 @@ logs/
 *.log
 query_log.sql
 .env
+tests/mlruns/
