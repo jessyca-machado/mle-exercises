@@ -42,6 +42,14 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.metrics import (
+    DB_INSERT_LATENCY_SECONDS,
+    DB_INSERTS_TOTAL,
+    HTTP_REQUEST_LATENCY_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    INFERENCE_LATENCY_SECONDS,
+    PREDICTIONS_TOTAL,
+)
 from src.infra.db.predictions_repo import PredictionRecord, PredictionsRepository
 from src.jobs.predict import (
     PredictConfig,
@@ -90,9 +98,11 @@ class LatencyLoggingMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
         token = REQUEST_ID_CTX.set(request_id)
         start = time.perf_counter()
-
+        status_code = 500
         try:
             response = await call_next(request)
+            status_code = response.status_code
+            return response
         except Exception:
             latency_ms = (time.perf_counter() - start) * 1000
             logger.exception(
@@ -108,24 +118,15 @@ class LatencyLoggingMiddleware(BaseHTTPMiddleware):
             )
             raise
         finally:
+            latency_s = time.perf_counter() - start
+            HTTP_REQUEST_LATENCY_SECONDS.labels(
+                method=request.method, path=request.url.path
+            ).observe(latency_s)
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method, path=request.url.path, status_code=str(status_code)
+            ).inc()
+
             REQUEST_ID_CTX.reset(token)
-
-        latency_ms = (time.perf_counter() - start) * 1000
-        response.headers["x-request-id"] = request_id
-        response.headers["x-latency-ms"] = f"{latency_ms:.3f}"
-
-        logger.info(
-            "request_completed",
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": response.status_code,
-                "latency_ms": round(latency_ms, 3),
-                "model_uri": MODEL_STATE.get("model_uri", ""),
-            },
-        )
-        return response
 
 
 NUMERIC_COLS = [
@@ -208,6 +209,19 @@ def get_predictions_repo() -> PredictionsRepository | None:
     if not dsn:
         return None
     return PredictionsRepository(dsn)
+
+
+def _safe_insert_many(repo, records) -> None:
+    start = time.perf_counter()
+    try:
+        repo.insert_many(records)
+        DB_INSERTS_TOTAL.labels(status="success").inc()
+    except Exception:
+        DB_INSERTS_TOTAL.labels(status="error").inc()
+        logger.exception("db_insert_failed", extra={"request_id": get_request_id()})
+        raise
+    finally:
+        DB_INSERT_LATENCY_SECONDS.observe(time.perf_counter() - start)
 
 
 @asynccontextmanager
@@ -330,8 +344,12 @@ def predict(
     validate_required_numeric(X)
 
     start = time.perf_counter()
+
+    inf_start = time.perf_counter()
     y_prob = predict_proba_pyfunc(model, X, proba_col="y_pred_proba")
+    INFERENCE_LATENCY_SECONDS.labels(path="/predict").observe(time.perf_counter() - inf_start)
     y_pred = (y_prob >= th).astype(int)
+    PREDICTIONS_TOTAL.labels(path="/predict", predicted_class=str(int(y_pred[0]))).inc()
     latency_ms = (time.perf_counter() - start) * 1000
 
     repo = get_predictions_repo()
@@ -346,7 +364,7 @@ def predict(
             y_pred_proba=float(y_prob[0]),
             features=payload,
         )
-        background_tasks.add_task(repo.insert_many, [rec])
+        background_tasks.add_task(_safe_insert_many, repo, [rec])
 
     logger.info(
         "inference_completed",
@@ -393,8 +411,15 @@ def predict_batch(
     validate_required_numeric(X)
 
     start = time.perf_counter()
+
+    inf_start = time.perf_counter()
     y_prob = predict_proba_pyfunc(model, X, proba_col="y_pred_proba")
+    INFERENCE_LATENCY_SECONDS.labels(path="/predict_batch").observe(time.perf_counter() - inf_start)
     y_pred = (y_prob >= th).astype(int)
+
+    for yp in y_pred:
+        PREDICTIONS_TOTAL.labels(path="/predict_batch", predicted_class=str(int(yp))).inc()
+
     latency_ms = (time.perf_counter() - start) * 1000
 
     logger.info(
@@ -426,7 +451,7 @@ def predict_batch(
             )
             for i, (item, yp, pp) in enumerate(zip(items, y_pred, y_prob, strict=False))
         ]
-        background_tasks.add_task(repo.insert_many, records)
+        background_tasks.add_task(_safe_insert_many, repo, records)
 
     preds = [
         ChurnPredictResponse(
