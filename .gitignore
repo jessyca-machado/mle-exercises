@@ -17,3 +17,4 @@ artifacts/
 logs/
 *.log
 query_log.sql
+.env
