@@ -15,7 +15,7 @@
 #
 # URLs:
 #   API:        http://localhost:8000/health
-#   MLflow UI:  http://localhost:5000
+#   MLflow UI:  http://localhost:5001
 #   MinIO:      http://localhost:9001
 #   Prometheus: http://localhost:9090
 #   Grafana:    http://localhost:3000 (admin/admin)
@@ -80,6 +80,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - churn-net
     entrypoint: >
@@ -137,6 +139,7 @@ services:
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       AWS_REGION: us-east-1
       PREDICTIONS_DB_DSN: postgresql://mlflow:mlflow@postgres:5432/churn
+      CHURN_API_KEY: ${CHURN_API_KEY}
     ports:
       - "8000:8000"
     networks:
@@ -195,3 +198,11 @@ services:
       - churn-net
     volumes:
       - ./infra/nginx/mlflow.conf:/etc/nginx/conf.d/default.conf:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: churn-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - churn-net

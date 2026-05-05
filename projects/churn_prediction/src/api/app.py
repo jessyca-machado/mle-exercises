@@ -18,7 +18,7 @@ Execução (manual):
     export CHURN_MODEL_URI="models:/churn_xgb/15"
     export CHURN_THRESHOLD="0.5"
     uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
-
+Res
 Uso:
     Em outro terminal faz a chamada para enviar os dados: curl -s http://localhost:8000/ready
     insira o JSON de entrada e veja a resposta.
@@ -27,6 +27,7 @@ Uso:
 from __future__ import annotations
 
 import contextvars
+import hmac
 import logging
 import os
 import time
@@ -37,9 +38,12 @@ from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.metrics import (
@@ -224,6 +228,17 @@ def _safe_insert_many(repo, records) -> None:
         DB_INSERT_LATENCY_SECONDS.observe(time.perf_counter() - start)
 
 
+def verify_api_key(request: Request) -> None:
+    expected = os.getenv("CHURN_API_KEY", "")
+    provided = request.headers.get("x-api-key", "")
+
+    if not expected:
+        raise HTTPException(status_code=500, detail="CHURN_API_KEY não configurada no servidor.")
+
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = get_predict_config()
@@ -253,6 +268,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+limiter = Limiter(key_func=get_remote_address, storage_uri="redis://redis:6379")
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(LatencyLoggingMiddleware)
 
@@ -315,14 +335,16 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/ready")
-def readiness_check() -> dict[str, str]:
+@app.get("/ready", dependencies=[Depends(verify_api_key)])
+@limiter.limit("120/minute")
+def readiness_check(request: Request) -> dict[str, str]:
     if "model" not in MODEL_STATE:
         raise HTTPException(status_code=503, detail="Modelo não disponível")
     return {"status": "ready", "model_uri": MODEL_STATE.get("model_uri", "")}
 
 
-@app.post("/predict", response_model=ChurnPredictResponse)
+@app.post("/predict", response_model=ChurnPredictResponse, dependencies=[Depends(verify_api_key)])
+@limiter.limit("30/minute")
 def predict(
     request: ChurnPredictRequest,
     background_tasks: BackgroundTasks,
@@ -387,8 +409,14 @@ def predict(
     )
 
 
-@app.post("/predict_batch", response_model=ChurnBatchPredictResponse)
+@app.post(
+    "/predict_batch",
+    response_model=ChurnBatchPredictResponse,
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
 def predict_batch(
+    request: Request,
     payload: ChurnBatchPredictRequest,
     background_tasks: BackgroundTasks,
 ) -> ChurnBatchPredictResponse:
