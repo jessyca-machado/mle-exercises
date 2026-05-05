@@ -21,6 +21,8 @@
         ├── Dockerfile.mlflow
         ├── README.md
         ├── docker-compose.yml
+        ├── docs
+        │   └── archtecture.md
         ├── experiments
         │   ├── __init__.py
         │   ├── comparison
@@ -112,6 +114,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-32 directories, 75 files
+33 directories, 76 files
 ```
 <!-- TREE:END -->
