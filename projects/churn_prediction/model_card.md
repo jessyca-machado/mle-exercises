@@ -40,7 +40,7 @@ datasets:
 - **Algoritmo principal:** XGBoost (com pré-processamento + modelo empacotado)
 - **Versão de Python (serving):** **Python 3.12.x**
 - **Treinado e logado por:** _jessycamachado0@gmail.com
-- **Data do treino/log:** 2026-05-08
+- **Data do treino/log:** 2026-05-05
 - **Licença:** MIT
 - **Contato:** jessycamachado0@gmail.com
 
@@ -129,10 +129,10 @@ select_kbest_k: 20
 
 ## Infrastructure Observations (Compose)
 O ambiente de desenvolvimento/integração utiliza:
-- MLflow Tracking/Registry via mlflow-proxy
-- MinIO como backend S3 para artifacts
-- PostgreSQL para persistência, inclui storage de predictions, se habilitado
-- Redis para rate limiting (SlowAPI) no modo Docker
+  - MLflow Tracking/Registry via mlflow-proxy
+  - MinIO como backend S3 para artifacts
+  - PostgreSQL para persistência, inclui storage de predictions, se habilitado
+  - Redis para rate limiting (SlowAPI) no modo Docker
 
 ## Limitations
 - Generalização limitada ao dataset/domínio: o modelo tende a funcionar bem apenas para clientes com perfil e distribuição parecidos com o dataset usado no treino. Mudanças de produto, preço, campanha, canal ou política podem degradar performance
