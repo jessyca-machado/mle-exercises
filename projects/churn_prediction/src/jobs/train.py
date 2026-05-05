@@ -179,6 +179,7 @@ def run_train_pipeline(
         )
     else:
         mlflow.set_tracking_uri(config.tracking_uri)
+        mlflow.set_registry_uri(config.registry_uri)
         mlflow.set_experiment(config.experiment_name)
 
     best = fetch_best_xgb_params_from_mlflow(
@@ -235,7 +236,13 @@ def run_train_pipeline(
             input_example=input_example,
         )
 
-        mlflow.register_model(model_uri=model_uri, name=config.registered_model_name)
+        mv = mlflow.register_model(model_uri=model_uri, name=config.registered_model_name)
+
+        mlf_client = client or MlflowClient()
+        mlf_client.set_registered_model_alias(config.registered_model_name, "prod", mv.version)
+
+        mlflow.set_tag("registered_model_version", str(mv.version))
+        mlflow.set_tag("registered_model_alias", "prod")
 
         return {
             "run_id": run.info.run_id,
