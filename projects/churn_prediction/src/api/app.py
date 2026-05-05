@@ -15,7 +15,7 @@ Execução (dev):
 Execução (manual):
     export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
     export MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
-    export CHURN_MODEL_URI="models:/churn_xgb/15"
+    export CHURN_MODEL_URI="models:/churn_xgb@prod"
     export CHURN_THRESHOLD="0.5"
     uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
 Res

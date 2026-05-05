@@ -5,7 +5,7 @@ cd "$PROJECT_ROOT"
 
 export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-sqlite:///mlflow.db}"
 export MLFLOW_REGISTRY_URI="${MLFLOW_REGISTRY_URI:-$MLFLOW_TRACKING_URI}"
-export CHURN_MODEL_URI="${CHURN_MODEL_URI:-models:/churn_xgb/13}"
+export CHURN_MODEL_URI="${CHURN_MODEL_URI:-models:/churn_xgb@prod}"
 export CHURN_THRESHOLD="${CHURN_THRESHOLD:-0.5}"
 
 export HOST="${HOST:-0.0.0.0}"
