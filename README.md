@@ -15,6 +15,7 @@
 └── projects
     ├── README.md
     └── churn_prediction
+        ├── .dockerignore
         ├── .pre-commit-config.yaml
         ├── Dockerfile.api
         ├── Dockerfile.mlflow
@@ -44,8 +45,6 @@
         │   └── eda.ipynb
         ├── pyproject.toml
         ├── requirements-mlflow.txt
-        ├── requirements-runtime.txt
-        ├── requirements.txt
         ├── scripts
         │   ├── __init__.py
         │   └── run_api.sh
@@ -112,6 +111,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-32 directories, 75 files
+32 directories, 74 files
 ```
 <!-- TREE:END -->
