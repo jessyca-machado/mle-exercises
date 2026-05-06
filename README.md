@@ -44,6 +44,7 @@
         │   │   └── init
         │   └── prometheus
         │       └── prometheus.yml
+        ├── link_repositorio.txt
         ├── ml_canvas_exercise.py
         ├── model_card.md
         ├── notebooks
@@ -116,6 +117,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 78 files
+33 directories, 79 files
 ```
 <!-- TREE:END -->
