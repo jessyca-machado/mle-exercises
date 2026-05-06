@@ -1,0 +1,3 @@
+Link do repositório referente a entrega do Tech Challenge da Fase 1 do curso de machine learning engineering da Fiap
+Grupo 41 | Jéssyca Machado | jessycamachado0@gmail.com | rm373102
+https://github.com/jessyca-machado/mle-exercises/tree/6f7b68ca43ec90c30699f1a3fac2ec8d93fafdbc/projects/churn_prediction
