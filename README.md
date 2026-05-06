@@ -44,7 +44,7 @@
         │   │   └── init
         │   └── prometheus
         │       └── prometheus.yml
-        ├── ml_canvas.exercicios.py
+        ├── ml_canvas_exercise.py
         ├── model_card.md
         ├── notebooks
         │   └── eda.ipynb
