@@ -4,7 +4,7 @@ Uso:
     python experiments/deep_learning/train_mlp_torch.py
 
 Para visualizar:
-    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
+    mlflow ui # Inicia UI em http://localhost:5000
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ Execução (manual):
     export CHURN_MODEL_URI="models:/churn_xgb@prod"
     export CHURN_THRESHOLD="0.5"
     uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
-Res
+
 Uso:
     Em outro terminal faz a chamada para enviar os dados: curl -s http://localhost:8000/ready
     insira o JSON de entrada e veja a resposta.
