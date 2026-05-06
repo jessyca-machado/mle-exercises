@@ -1,23 +1,23 @@
 # Churn Prediction (Telco customer churn IBM)
 
-## ** Objetivo**
+## Objetivo
 Este projeto implementa um modelo supervisionado de churn para identificar clientes com alta probabilidade de deixarem a empresa de telecomunicações (virarem churn). O projeto conta com:
-  - **Treino** modelo end-to-end (feature engineering + preprocess + selector + estimador + registro)
+  - **Treino** do modelo end-to-end (feature engineering + preprocess + selector + estimador + registro)
 
   - **Model Registry e versionamento** com MLflow
 
-  **API de inferência (FastAPI) com:**
+  - **API de inferência (FastAPI) com:**
     - /predict e /predict_batch
     - autenticação via API Key (X-API-KEY)
     - rate limiting (SlowAPI + Redis)
     - persistência de predições em Postgres
     - endpoint /metrics (Prometheus)
 
-  **Monitoramento:**
+  - **Monitoramento:**
     - Prometheus + Grafana
     - Drift PSI em job batch (drift.py) persistindo em Postgres (drift_metrics)
 
-## 🛠️ Arquitetura**
+## 🛠️ Arquitetura
 **Serving (real-time)**
   - FastAPI (Gunicorn + UvicornWorker)
   - Modelo carregado no startup via MLflow PyFunc (CHURN_MODEL_URI)
@@ -33,14 +33,14 @@ Este projeto implementa um modelo supervisionado de churn para identificar clien
   - Prometheus scrape em /metrics
   - Drift PSI via drift.py → salva em drift_metrics
 
-## **Modos de execução**
+## Modos de execução
 É possível trabalhar de duas formas:
-  **A. Docker-only**
+  - **A. Docker-only**
     - Sobe toda a stack via Docker Compose.
     - Roda jobs (baseline/drift/treino final) dentro dos containers com docker compose.
     - Não precisa instalar Python/uv no host.
 
-  **B. Dev no host com uv**
+  - **B. Dev no host com uv**
     - Usa uv para instalar dependências e rodar scripts no host.
     - Útil principalmente para rodar experiments/ localmente.
 
@@ -70,7 +70,7 @@ docker compose version
 Instale o Docker Desktop manualmente a partir do link https://docs.docker.com/desktop/setup/install/windows-install/.
 
 
-### Para Dev com uv
+### UV Lock
 O projeto utiliza o **uv** como gerenciador oficial de pacotes e a versão estrita do **Python 3.12.x**.
 
 #### Linux/macOS
@@ -94,7 +94,7 @@ uv --version
 - Para trabalhar com notebooks, o projeto usa `ipykernel` como dependência de desenvolvimento (extra dev).
 - O docker também consome as dependências do `uv.lock`
 
-## 🔧 Configuração do ambiente - para rodar no host
+## 🔧 Configuração do ambiente
 
 ### para rodar docker
 #### 1. Entrar na pasta do projeto:
@@ -108,18 +108,18 @@ cd projects/churn_prediction
 cd projects/churn_prediction
 ```
 
-#### 2. **Criar a venv:**
+#### 2. Criar a venv:
 ```bash
 uv venv .venv
 ```
 
-#### 3. **Instalar as dependências (incluindo as de desenvolvimento):**
+#### 3. Instalar as dependências (incluindo as de desenvolvimento):
 Instale as dependências conforme o `uv.lock` (ou gere/atualize o lock quando necessário):
 ```bash
 uv sync --extra dev
 ```
 
-#### 4. **Ative o ambiente virtual:**
+#### 4. Ative o ambiente virtual:
 ##### Linux/macOS
 ```bash
 source .venv/bin/activate
@@ -154,13 +154,18 @@ API_URL=http://localhost:8001
 - Para subir a API é necessário respeitar a execução do projeto do experimento até o treino.
 - Para rodar a pipeline abaixo é preciso que tenha o make instalado.
 - É possível rodar o comandos no terminal, acessando os documentos com recomendação de uso na docstring:
-  - Experimento sklearn: `python experiments/comparison/train_sklearn.py`
-  - Experimento MLP-Pytorch: `python experiments/deep_learning/train_mlp_torch.py`
-  - Trade-off de custo: `python experiments/selection/cost_toolkit_metrics.py`
-  - Teste de hipótese: `python experiments/selection/compare_models.py`
-  - Treino: `python src/jobs/train.py`
-  - Testes (unitário e integração): `pytest -vv`
-  - API: detalhes na docstring da `/projects/churn_prediction/src/api/app.py`
+
+### Scripts / Atalhos (linha de comando)
+
+| Ação | Comando / Referência | Descrição |
+|---|---|---|
+| Experimento sklearn | `python experiments/comparison/train_sklearn.py` | Executa experimento com modelos/rotina sklearn. |
+| Experimento MLP-Pytorch | `python experiments/deep_learning/train_mlp_torch.py` | Executa experimento de deep learning (MLP) em PyTorch. |
+| Trade-off de custo | `python experiments/selection/cost_toolkit_metrics.py` | Calcula métricas e trade-off de custo/impacto no negócio. |
+| Teste de hipótese | `python experiments/selection/compare_models.py` | Compara modelos via teste de hipótese. |
+| Treino | `python src/jobs/train.py` | Treina e registra o modelo final. |
+| Testes (unitário e integração) | `pytest -vv` | Executa toda a suíte de testes com verbosidade. |
+| API | Docstring em `src/api/app.py` | Instruções/uso da API (endpoints, payload, execução). |
 
 ## Um único comando
 ### Docker
@@ -173,14 +178,17 @@ make pipeline MODE="docker"
 make pipeline
 ```
 
-## OU passo a passo (cross-platform)
-make exp-sklearn   # ~30min. validação cruzada estratificada com 10 folds e tuning com RandomizedGridSearchCV
-make exp-mlp     # ~2min. validação cruzada estratificada com 10 folds e tuning
-make cost         ## ~1min: Calcula trade-off de custo e impacto no negócio
-make compare-models # ~1min: treina/ registra modelo final
-make train       # ~1min: treina/ registra modelo final
-make test   # ~1min: testes de integração e unitários
-make run      # ~1min: sobe a API. A partir daqui já é possível fazer inferência. Abra um segundo terminal e faça o post dos dados
+## Comandos (Makefile) (cross-platform)
+
+| Comando | Tempo estimado | Descrição |
+|---|---:|---|
+| `make exp-sklearn` | ~30 min | Validação cruzada estratificada com 10 folds e tuning com `RandomizedGridSearchCV`. |
+| `make exp-mlp` | ~2 min | Validação cruzada estratificada com 10 folds e tuning (MLP). |
+| `make cost` | ~1 min | Calcula trade-off de custo e impacto no negócio. |
+| `make compare-models` | ~1 min | Treina e registra o modelo final (comparação de modelos). |
+| `make train` | ~1 min | Treina e registra o modelo final. |
+| `make test` | ~1 min | Executa testes de integração e unitários. |
+| `make run` | ~1 min | Sobe a API para inferência (em outro terminal, faça o POST dos dados). |
 
 ## Exemplo de uso manual da API
 ### Linux
@@ -213,6 +221,5 @@ curl -s -X POST "http://localhost:8000/predict" \
 ```
 
 Veja a [documentação da arquitetura](docs/archtecture.md).
-Veja a [documentação do plano de monitoramento](docs/monitoring.md).
 
-## URLs úteis
+Veja a [documentação do plano de monitoramento](docs/monitoring.md).
