@@ -369,3 +369,6 @@ Veja o [canvas do projeto](ml_canvas_exercicios.md).
             ├── test_pyfunc_contract_unit.py    # Contrato do PyFunc
             ├── test_trainer_pipeline.py        # Testes do pipeline de treino
             └── test_trainer_predict_pyfunc_mode.py # Predição via PyFunc em testes
+
+## Vídeo STAR
+[Assista o vídeo](https://drive.google.com/file/d/1gySWCibZ_yyCqUJg683hFJ_9G6r1hs3G/view?usp=sharing)
