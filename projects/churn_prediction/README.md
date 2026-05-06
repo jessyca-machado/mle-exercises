@@ -223,3 +223,149 @@ curl -s -X POST "http://localhost:8000/predict" \
 Veja a [documentação da arquitetura](docs/archtecture.md).
 
 Veja a [documentação do plano de monitoramento](docs/monitoring.md).
+
+Veja o [model card do projeto](model_card.md).
+
+Veja o [canvas do projeto](ml_canvas_exercicios.md).
+
+## Estrutura do projeto
+
+└── churn_prediction                            # Projeto de predição de churn
+    ├── .dockerignore                           # Itens excluídos do build do Docker
+    ├── .pre-commit-config.yaml                 # Hooks de qualidade antes do commit
+
+
+    ├── Dockerfile.api                          # Imagem da API
+    ├── Dockerfile.mlflow                       # Imagem do MLflow
+
+
+    ├── Makefile                                # Atalhos de comandos
+    ├── README.md                               # README do churn_prediction
+    ├── docker-compose.yml                      # Sobe o stack de serviços
+
+
+    ├── docs                                    # Documentação
+    │   ├── archtecture.md                      # Arquitetura do projeto
+    │   └── monitoring.md                       # Monitoramento e métricas
+
+
+    ├── experiments                             # Experimentação e comparação de modelos
+    │   ├── __init__.py                         # Define o pacote experiments
+    │
+    │   ├── comparison                          # Experimentos com abordagem sklearn
+    │   │   ├── __init__.py                     # Define o pacote comparison
+    │   │   └── train_sklearn.py                # Treina e avalia com sklearn
+    │
+    │   ├── deep_learning                       # Experimentos de deep learning
+    │   │   ├── __init__.py                     # Define o pacote deep_learning
+    │   │   └── train_mlp_torch.py              # Treina e avalia MLP em PyTorch
+    │
+    │   └── selection                           # Seleção de modelo por critérios de negócio
+    │       ├── __init__.py                     # Define o pacote selection
+    │       ├── compare_models.py               # Compara modelos com teste de hipótese
+    │       └── cost_toolkit_metrics.py         # Trade-off de custo e impacto no negócio
+
+
+    ├── infra                                   # Arquivos de infraestrutura
+    │   ├── nginx                               # Configurações do Nginx
+    │   │   └── mlflow.conf                     # Proxy e rotas para o MLflow
+    │   ├── postgres                            # Configurações do Postgres
+    │   │   └── init                            # Scripts de inicialização do banco
+    │   └── prometheus                          # Configurações do Prometheus
+    │       └── prometheus.yml                  # Targets e regras de coleta de métricas
+
+
+    ├── ml_canvas_exercises.py                 # Arquivo de canvas inicial do projeto
+
+
+    ├── model_card.md                           # Model Card do modelo final
+
+
+    ├── notebooks                               # Notebooks de análise
+    │   └── eda.ipynb                           # Análise exploratória de dados
+
+
+    ├── pyproject.toml                          # Dependências e configuração do projeto
+    ├── requirements-mlflow.txt                 # Dependências do serviço MLflow
+    ├── uv.lock                                 # Lockfile de dependências
+
+
+    ├── scripts                                 # Scripts utilitários
+    │   ├── __init__.py                         # Define o pacote scripts
+    │   └── run_api.sh                          # Script para subir a API
+
+
+    ├── src                                     # Código fonte
+    │   ├── __init__.py                         # Define o pacote src
+    │
+    │   ├── api                                 # Camada de serving
+    │   │   ├── __init__.py                     # Define o pacote api
+    │   │   ├── app.py                          # Aplicação da API e endpoints
+    │   │   └── metrics.py                      # Métricas exportadas pela API
+    │
+    │   ├── core                                # Núcleo do domínio
+    │   │   ├── __init__.py                     # Define o pacote core
+    │   │   └── models                          # Estruturas centrais de modelos
+    │
+    │   ├── data                                # Pipeline de dados
+    │   │   ├── __init__.py                     # Define o pacote data
+    │   │   ├── feature_engineering.py          # Criação e transformação de features
+    │   │   ├── load_data.py                    # Carregamento de dados
+    │   │   ├── preprocess.py                   # Pré-processamento e preparação de dataset
+    │   │   └── transformers.py                 # Transformers customizados
+    │
+    │   ├── entrypoints                         # Pontos de entrada
+    │   │   ├── __init__.py                     # Define o pacote entrypoints
+    │   │   └── cli.py                          # Interface de linha de comando
+    │
+    │   ├── infra                               # Integrações com serviços externos
+    │   │   ├── __init__.py                     # Define o pacote infra
+    │   │   ├── db                              # Integração com banco de dados
+    │   │   └── mlflow                          # Integração com MLflow
+    │
+    │   ├── jobs                                # Rotinas executáveis
+    │   │   ├── __init__.py                     # Define o pacote jobs
+    │   │   ├── drift.py                        # Rotina de drift
+    │   │   ├── generate_traffic.py             # Geração de tráfego para testes e métricas
+    │   │   ├── make_baseline.py                # Criação de baseline
+    │   │   ├── predict.py                      # Predição em modo job
+    │   │   └── train.py                        # Treino e registro do modelo
+    │
+    │   ├── ml                                  # Componentes de ML
+    │   │   ├── __init__.py                     # Define o pacote ml
+    │   │   ├── churn_pyfunc_mlp.py             # Wrapper PyFunc para MLP
+    │   │   ├── churn_pyfunc_xgb.py             # Wrapper PyFunc para XGBoost
+    │   │   ├── cost_utils.py                   # Utilitários de custo
+    │   │   ├── data_utils.py                   # Utilitários de dados
+    │   │   ├── logging_utils.py                # Utilitários de logging
+    │   │   ├── metrics_utils.py                # Utilitários de métricas
+    │   │   ├── mlflow_selection_utils.py       # Seleção do melhor run no MLflow
+    │   │   ├── mlflow_utils.py                 # Helpers de MLflow
+    │   │   └── persistence.py                  # Persistência de artefatos
+    │
+    │   └── utils                               # Utilidades gerais
+    │       ├── __init__.py                     # Define o pacote utils
+    │       ├── constants.py                    # Constantes do projeto
+    │       └── helpers.py                      # Funções auxiliares
+
+
+    └── tests                                   # Testes automatizados
+        ├── __init__.py                         # Define o pacote tests
+        ├── conftest.py                         # Fixtures do pytest
+        │
+        ├── integration                         # Testes de integração
+        │   ├── __init__.py                     # Define o pacote integration
+        │   ├── test_api.py                     # Testes da API
+        │   ├── test_e2e.py                     # Teste ponta a ponta
+        │   └── test_mlflow_logging.py          # Testes de logging no MLflow
+        │
+        └── units                               # Testes unitários
+            ├── __init__.py                     # Define o pacote units
+            │
+            ├── test_load_data.py               # Testes de carga de dados
+            ├── test_mlflow_fetch_best_params.py# Testes de seleção de parâmetros
+            ├── test_preprocessing.py           # Testes de pré-processamento
+            ├── test_preprocessor_sanity.py     # Sanidade do preprocessor
+            ├── test_pyfunc_contract_unit.py    # Contrato do PyFunc
+            ├── test_trainer_pipeline.py        # Testes do pipeline de treino
+            └── test_trainer_predict_pyfunc_mode.py # Predição via PyFunc em testes
