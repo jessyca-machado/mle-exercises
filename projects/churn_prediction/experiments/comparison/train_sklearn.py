@@ -7,7 +7,7 @@ Uso:
     python experiments/comparison/train_sklearn.py
 
 Para visualizar:
-    mlflow ui --backend-store-uri sqlite:///mlflow.db # Inicia UI em http://localhost:5000
+    mlflow ui # Inicia UI em http://localhost:5000
 """
 
 import logging
