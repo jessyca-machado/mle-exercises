@@ -11,6 +11,7 @@
 ├── .gitignore
 ├── .vscode
 │   └── settings.json
+├── LICENSE
 ├── README.md
 └── projects
     ├── README.md
@@ -117,6 +118,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 79 files
+33 directories, 80 files
 ```
 <!-- TREE:END -->
