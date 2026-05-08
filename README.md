@@ -17,6 +17,7 @@
     ├── README.md
     └── churn_prediction
         ├── .dockerignore
+        ├── .env.example
         ├── .pre-commit-config.yaml
         ├── Dockerfile.api
         ├── Dockerfile.mlflow
@@ -25,7 +26,11 @@
         ├── docker-compose.yml
         ├── docs
         │   ├── archtecture.md
+        │   ├── ml_canvas_exercise.py
+        │   ├── model_card.md
         │   └── monitoring.md
+        ├── examples
+        │   └── payload.json
         ├── experiments
         │   ├── __init__.py
         │   ├── comparison
@@ -46,8 +51,6 @@
         │   └── prometheus
         │       └── prometheus.yml
         ├── link_repositorio.txt
-        ├── ml_canvas_exercise.py
-        ├── model_card.md
         ├── notebooks
         │   └── eda.ipynb
         ├── pyproject.toml
@@ -118,6 +121,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-33 directories, 80 files
+34 directories, 82 files
 ```
 <!-- TREE:END -->
