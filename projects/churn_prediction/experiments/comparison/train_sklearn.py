@@ -391,7 +391,10 @@ def main():
     print_results_table(results, title="Model Comparison — Best CV Score")
 
     console.print("\n[bold green]Treino sklearn concluído![/bold green]")
-    console.print(f"[dim]Resultados logados no MLflow: {MLFLOW_TRACKING_URI}[/dim]\n")
+    console.print(
+        "[dim]Resultados logados no MLflow: "
+        "[link=http://localhost:5000]http://localhost:5000[/link][/dim]\n"
+    )
 
 
 if __name__ == "__main__":

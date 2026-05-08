@@ -34,7 +34,7 @@ export RATE_LIMIT_STORAGE_URI
 
 RUFF_CACHE_DIR=/tmp/ruff_cache
 
-## lint tools (ajuste conforme seu projeto)
+## lint tools
 RUFF ?= ruff
 
 .PHONY: help lint test run up down build rebuild logs shell \
@@ -148,8 +148,8 @@ pipeline: ## Executa fluxo completo: lint, exp, compare, custo, treino, teste, r
 	$(MAKE) lint MODE=$(MODE)
 	$(MAKE) exp-sklearn MODE=$(MODE)
 	$(MAKE) exp-mlp MODE=$(MODE)
-	$(MAKE) compare-models MODE=$(MODE)
 	$(MAKE) cost MODE=$(MODE)
+	$(MAKE) compare-models MODE=$(MODE)
 	$(MAKE) train MODE=$(MODE)
 	$(MAKE) test MODE=$(MODE)
 	$(MAKE) run MODE=$(MODE)
