@@ -270,4 +270,4 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 - [XGBoost Documentation](https://xgboost.readthedocs.io/en/release_3.2.0/)
 
 ## LICENSE
-Veja o arquivo [LICENSE](mle-exercises/projects/LICENSE).
+Veja o arquivo [LICENSE](https://github.com/jessyca-machado/mle-exercises/blob/main/LICENSE).
