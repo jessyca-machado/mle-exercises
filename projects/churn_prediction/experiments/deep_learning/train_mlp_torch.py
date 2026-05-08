@@ -916,7 +916,10 @@ def main():
     console.print(
         "\n[bold green]Treino MLP concluído (1 run por config + modelo final)![/bold green]"
     )
-    console.print(f"[dim]Resultados logados no MLflow: {MLFLOW_TRACKING_URI}[/dim]\n")
+    console.print(
+        "[dim]Resultados logados no MLflow: "
+        "[link=http://localhost:5000]http://localhost:5000[/link][/dim]\n"
+    )
 
 
 if __name__ == "__main__":

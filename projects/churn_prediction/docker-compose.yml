@@ -131,6 +131,10 @@ services:
     depends_on:
       mlflow-proxy:
         condition: service_started
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
     environment:
       MLFLOW_TRACKING_URI: http://mlflow-proxy
       MLFLOW_REGISTRY_URI: http://mlflow-proxy
@@ -142,6 +146,7 @@ services:
       AWS_REGION: us-east-1
       PREDICTIONS_DB_DSN: postgresql://mlflow:mlflow@postgres:5432/churn
       CHURN_API_KEY: ${CHURN_API_KEY}
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
     ports:
       - "8000:8000"
     networks:
@@ -208,3 +213,9 @@ services:
       - "6379:6379"
     networks:
       - churn-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 30
+      start_period: 2s
