@@ -14,49 +14,49 @@
 10. [Referências](#referências)
 
 ## Objetivo
-Este projeto implementa um modelo supervisionado de churn para identificar clientes com alta probabilidade de deixarem a empresa de telecomunicações (virarem churn). O projeto conta co
+Este repositório implementa um modelo de churn para identificar clientes com alta probabilidade de deixarem a empresa de telecomunicações (virarem churn). O repositório conta com:
 
-  - **Experimentações** com baseline, trade-off de custo e teste de hipóteses
+  - **Experimentações** com baseline, trade-off de custo e teste de hipóteses.
 
-  - **Treino** do modelo end-to-end (feature engineering + preprocess + selector + estimador + registro)
+  - **Treino** do melhor modelo end-to-end (feature engineering + preprocess + selector + estimador + registro).
 
-  - **Model Registry e versionamento** com MLflow
+  - **Model Registry e versionamento** com MLflow.
 
   - **API de inferência (FastAPI) com:**
-    - /health
-    - /predict e /predict_batch
-    - autenticação via API Key (X-API-KEY)
-    - rate limiting (SlowAPI + Redis)
-    - persistência de predições em Postgres
-    - endpoint /metrics (Prometheus)
+    - /health.
+    - /predict e /predict_batch.
+    - autenticação via API Key (X-API-KEY).
+    - rate limiting (SlowAPI + Redis).
+    - persistência de predições em Postgres.
+    - endpoint /metrics (Prometheus).
 
   - **Monitoramento:**
-    - Prometheus
-    - Drift PSI em job batch (drift.py) persistindo em Postgres (drift_metrics)
+    - Prometheus.
+    - Drift PSI em job batch (drift.py) persistindo em Postgres (drift_metrics).
 
 ## Arquitetura
 **Tracking/Registry**
-  - MLflow Tracking + Model Registry
-  - Backend store: Postgres
-  - Artifacts: MinIO (S3)
-  - mlflow-proxy (nginx) para evitar problemas de Host header entre containers
+  - MLflow Tracking + Model Registry.
+  - Backend store: Postgres.
+  - Artifacts: MinIO (S3).
+  - mlflow-proxy (nginx) para evitar problemas de Host header entre containers.
 
 **Serving (real-time)**
-  - FastAPI (Gunicorn + UvicornWorker)
-  - Modelo carregado no startup via MLflow PyFunc (CHURN_MODEL_URI)
-  - Predições persistidas no Postgres (churn_predictions)
+  - FastAPI (Gunicorn + UvicornWorker).
+  - Modelo carregado no startup via MLflow PyFunc (CHURN_MODEL_URI).
+  - Predições persistidas no Postgres (churn_predictions).
 
 **Observabilidade**
-  - Prometheus scrape em /metrics
-  - Drift PSI via drift.py → salva em drift_metrics
+  - Prometheus scrape em /metrics.
+  - Drift PSI via drift.py → salva em drift_metrics.
 
 ## Pré-requisito:
-- Docker e Docker Compose para rodar a stack completa + make
-- Modo host: Python 3.12 + uv + make
+- Docker e Docker Compose para rodar a stack completa + make.
+- Modo host: Python 3.12 + uv + make.
 
 **Instalação:**
-- Docker: https://docs.docker.com/get-docker/
-- uv: https://docs.astral.sh/uv/getting-started/installation/
+- Docker: https://docs.docker.com/get-docker/.
+- uv: https://docs.astral.sh/uv/getting-started/installation/.
 
 ### É possível trabalhar de duas formas:
   - **A. Docker-only**
@@ -70,10 +70,10 @@ Este projeto implementa um modelo supervisionado de churn para identificar clien
 
 
 ### Sobre dependências e lockfile
-- As dependências do projeto estão em `pyproject.toml`.
+- As dependências estão em `pyproject.toml`.
 - O arquivo `uv.lock` registra versões exatas para reproduzir o ambiente.
-- Para trabalhar com notebooks, o projeto usa `ipykernel` como dependência de desenvolvimento (extra dev).
-- O docker também consome as dependências do `uv.lock`
+- Para trabalhar com notebooks, é utilizado o `ipykernel` como dependência de desenvolvimento (extra dev).
+- O docker também consome as dependências do `uv.lock`.
 
 ## Configurar ambiente
 ```bash
@@ -109,7 +109,7 @@ source .venv/bin/activate  # Linux/Mac
 ```
 
 ## Reproduzir o treino
-- Para subir a API é necessário respeitar a execução do projeto do experimento até o treino.
+- Para subir a API é necessário respeitar a ordem de execução do experimento até o treino.
 - Todas as etapas são registradas no mlflow e os parâmetros do melhor modelo são filtrados por lá.
 
 ### Um único comando
@@ -124,7 +124,7 @@ make pipeline-host
 ```
 
 ### Comandos (Makefile) (cross-platform)
-inclua o MODE=docker após os comandos se for rodar com Docker
+inclua o MODE=docker após os comandos se for rodar com Docker.
 
 | Comando | Tempo estimado (Docker) | Descrição |
 |---|---:|---|
@@ -163,11 +163,11 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 
 ## Estrutura do repositório
 ```text
-└── churn_prediction                            # Projeto de predição de churn
+└── churn_prediction                            # Predição de churn
     ├── docs
-    │   ├── archtecture.md                      # Arquitetura do projeto
+    │   ├── archtecture.md                      # Arquitetura
     │   ├── monitoring.md                       # Monitoramento e métricas
-    │   ├── ml_canvas_exercises.py              # Arquivo de canvas inicial do projeto
+    │   ├── ml_canvas_exercises.py              # Arquivo de canvas inicial
     │   └── model_card.md                       # Model Card do modelo final
     ├── experiments
     │   ├── comparison
@@ -221,7 +221,7 @@ curl.exe -s -X POST "$env:API_URL/predict" `
     │   │   ├── mlflow_utils.py                 # Helpers de MLflow
     │   │   └── persistence.py                  # Persistência de artefatos
     │   └── utils
-    │       ├── constants.py                    # Constantes do projeto
+    │       ├── constants.py                    # Constantes utilizadas
     │       └── helpers.py                      # Funções auxiliares
     ├── tests
     │   ├── conftest.py                         # Fixtures do pytest
@@ -238,7 +238,7 @@ curl.exe -s -X POST "$env:API_URL/predict" `
     │       ├── test_trainer_pipeline.py        # Testes do pipeline de treino
     │       └── test_trainer_predict_pyfunc_mode.py # Predição via PyFunc em testes
     ├── .env.example                            # Exemplo de variáveis de ambiente
-    ├── pyproject.toml                          # Dependências e configuração do projeto
+    ├── pyproject.toml                          # Dependências e configuração
     ├── requirements-mlflow.txt                 # Dependências do serviço MLflow
     ├── uv.lock                                 # Lockfile de dependências
     ├── .dockerignore                           # Itens excluídos do build do Docker
@@ -254,8 +254,8 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 
 - Veja a [documentação da arquitetura](docs/archtecture.md).
 - Veja a [documentação do plano de monitoramento](docs/monitoring.md).
-- Veja o [model card do projeto](docs/model_card.md).
-- Veja o [canvas do projeto](docs/ml_canvas_exercicios.md).
+- Veja o [model card](docs/model_card.md).
+- Veja o [canvas](docs/ml_canvas_exercicios.md).
 
 ## Vídeo STAR
 [Assista o vídeo](https://drive.google.com/file/d/1gySWCibZ_yyCqUJg683hFJ_9G6r1hs3G/view?usp=sharing)
