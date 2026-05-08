@@ -268,3 +268,6 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 - [Scikit-Learn DOcumentation](https://scikit-learn.org/0.21/documentation.html)
 - [Docker Documentation](https://docs.docker.com/)
 - [XGBoost Documentation](https://xgboost.readthedocs.io/en/release_3.2.0/)
+
+## LICENSE
+Veja o arquivo [LICENSE](mle-exercises/projects/LICENSE).
