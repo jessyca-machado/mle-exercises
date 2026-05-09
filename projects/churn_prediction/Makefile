@@ -13,8 +13,9 @@ API_SERVICE ?= api
 PY_HOST ?= python
 PYTEST_HOST ?= pytest
 
-PY_DOCKER := /app/.venv/bin/python
-PYTEST_DOCKER := /app/.venv/bin/pytest
+PY_DOCKER := uv run python
+PYTEST_DOCKER := uv run pytest
+RUFF_DOCKER := uv run ruff
 
 ## scripts
 TRAIN_JOB := src/jobs/train.py
@@ -64,10 +65,9 @@ install:  ## instala todas as dependências (treino + dev)
 
 lint: ## Executa Ruff para checar estilo e erros
 ifeq ($(MODE),docker)
-	docker compose run --rm \
-		-v "$$PWD:/app" -w /app \
-		-e RUFF_CACHE_DIR=/tmp/ruff_cache \
-		$(API_SERVICE) /app/.venv/bin/ruff check src tests
+    docker compose run --rm \
+        -e RUFF_CACHE_DIR=/tmp/ruff_cache \
+        $(API_SERVICE) $(RUFF_DOCKER) check src tests
 else
 	$(RUFF) check .
 endif
