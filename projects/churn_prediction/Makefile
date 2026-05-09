@@ -65,9 +65,9 @@ install:  ## instala todas as dependências (treino + dev)
 
 lint: ## Executa Ruff para checar estilo e erros
 ifeq ($(MODE),docker)
-    docker compose run --rm \
-        -e RUFF_CACHE_DIR=/tmp/ruff_cache \
-        $(API_SERVICE) $(RUFF_DOCKER) check src tests
+	docker compose run --rm \
+		-e RUFF_CACHE_DIR=/tmp/ruff_cache \
+		$(API_SERVICE) $(RUFF_DOCKER) check src tests
 else
 	$(RUFF) check .
 endif
