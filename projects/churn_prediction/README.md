@@ -77,6 +77,7 @@ Este repositório implementa um modelo de churn para identificar clientes com al
 
 ## Configurar ambiente
 ```bash
+cd projects/churn_prediction
 # Copie o .env.example para o .env
 cp .env.example .env
 ```
