@@ -143,20 +143,30 @@ else
 	$(PY_HOST) $(COMPARE_MODELS)
 endif
 
-## Pipeline utilizando o MODE atual (default: host)
-pipeline: ## Executa fluxo completo: lint, exp, compare, custo, treino, teste, run
+## Experimentos utilizando o MODE atual (default: host)
+experiment: ## Executa fluxo de experimento completo: lint, exp, custo, compare
 	$(MAKE) lint MODE=$(MODE)
 	$(MAKE) exp-sklearn MODE=$(MODE)
 	$(MAKE) exp-mlp MODE=$(MODE)
 	$(MAKE) cost MODE=$(MODE)
 	$(MAKE) compare-models MODE=$(MODE)
-	$(MAKE) train MODE=$(MODE)
+
+## Pipeline utilizando o MODE atual (default: host)
+pipeline: ## Executa fluxo completo: lint, teste, treino, run
+	$(MAKE) lint MODE=$(MODE)
 	$(MAKE) test MODE=$(MODE)
+	$(MAKE) train MODE=$(MODE)
 	$(MAKE) run MODE=$(MODE)
 
 ## Atalhos explícitos
 pipeline-host: ## Executa pipeline completa no ambiente do host
 	$(MAKE) pipeline MODE=host
 
+experiment-host: ## Executa experimentos completos no ambiente do host
+	$(MAKE) experiment MODE=host
+
 pipeline-docker: ## Executa pipeline completa dentro do Docker Compose
 	$(MAKE) pipeline MODE=docker
+
+experiment-docker: ## Executa experimentos completos dentro do Docker Compose
+	$(MAKE) experiment MODE=docker

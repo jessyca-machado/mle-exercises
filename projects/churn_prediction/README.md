@@ -110,18 +110,36 @@ source .venv/bin/activate  # Linux/Mac
 ```
 
 ## Reproduzir o treino
-- Para subir a API é necessário respeitar a ordem de execução do experimento até o treino.
-- Todas as etapas são registradas no mlflow e os parâmetros do melhor modelo são filtrados por lá.
+- Todas as etapas são registradas no mlflow.
+- Os parâmetros do melhor modelo do experimento (`xgboost`), utilizados na pipeline, estão [nesse caminho](configs/best_model.yml).
 
 ### Um único comando
-#### Docker
+#### Pipeline Docker
+Rodar pipeline: teste + treino + api
 ```bash
+cd projects/churn_prediction
 make pipeline-docker
 ```
 
-#### Host
+#### Experimentos Docker
+Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos
 ```bash
+cd projects/churn_prediction
+make experiment-docker
+```
+
+#### Pipeline Host
+Rodar pipeline: teste + treino + api
+```bash
+cd projects/churn_prediction
 make pipeline-host
+```
+
+#### Experimentos Host
+Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos
+```bash
+cd projects/churn_prediction
+make experiment-host
 ```
 
 ### Comandos (Makefile) (cross-platform)
@@ -141,6 +159,7 @@ inclua o MODE=docker após os comandos se for rodar com Docker.
 ```bash
 # Linux/macOS
 # carregar variáveis do .env e utiliza o endpoint.
+cd projects/churn_prediction
 set -a; source .env; set +a
 curl -s -X POST "$API_URL/predict" \
   -H "Content-Type: application/json" \
@@ -150,6 +169,7 @@ curl -s -X POST "$API_URL/predict" \
 ```bash
 # Windows (PowerShell)
 # carregar variáveis do .env e utiliza o endpoint
+cd projects/churn_prediction
 Get-Content .env | ForEach-Object {
   if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
   $k, $v = $_ -split '=', 2
@@ -165,6 +185,8 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 ## Estrutura do repositório
 ```text
 └── churn_prediction                            # Predição de churn
+    ├── configs
+    │   ├── best_model.yml                      # Hiperparâmetros do modelo xgboost utilizado no treino
     ├── docs
     │   ├── archtecture.md                      # Arquitetura
     │   ├── monitoring.md                       # Monitoramento e métricas
