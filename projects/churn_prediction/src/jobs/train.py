@@ -36,6 +36,7 @@ import mlflow
 import pandas as pd
 import pytz
 import skops.io as sio
+import yaml
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from sklearn.preprocessing import FunctionTransformer
@@ -45,7 +46,6 @@ from src.core.models.trainer import ChurnModelTrainer
 from src.data.load_data import load_data_churn
 from src.data.preprocess import pre_processing
 from src.entrypoints.cli import parse_args
-from src.infra.mlflow.params import fetch_best_xgb_params_from_mlflow
 from src.ml.mlflow_utils import setup_mlflow_sqlite
 from src.utils.constants import (
     FEATURES_COLS,
@@ -58,6 +58,8 @@ from src.utils.constants import (
     YES_NO_COLS,
 )
 
+BEST_MODEL_CONFIG_PATH_DEFAULT = Path("configs/best_model.yml")
+
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -68,11 +70,23 @@ class TrainConfig:
     timezone: str = "America/Sao_Paulo"
     n_folds: int = N_FOLDS
     random_seed: int = RANDOM_SEED
-    search_run_type_tag: str = "randomized"
     primary_metric: str = PRIMARY_METRIC
     params_prefix: str = "model__"
     pyfunc_code_path: str = "src/ml/churn_pyfunc_xgb.py"
     pip_requirements: Optional[Union[str, list[str]]] = "requirements-mlflow.txt"
+    best_model_config_path: Path = BEST_MODEL_CONFIG_PATH_DEFAULT
+
+
+def load_best_model_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Arquivo de best model não encontrado: {path}. "
+            "Crie `configs/best_model.yml` ou ajuste o caminho."
+        )
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"YAML inválido em {path}: esperado dict no topo.")
+    return data
 
 
 def log_xgb_end_to_end_pyfunc(
@@ -153,7 +167,7 @@ def log_xgb_end_to_end_pyfunc(
 def run_train_pipeline(
     X: pd.DataFrame,
     y: pd.Series,
-    config,
+    config: TrainConfig,
     trainer: Optional[ChurnModelTrainer] = None,
     client: Optional[MlflowClient] = None,
 ) -> dict[str, Any]:
@@ -182,26 +196,40 @@ def run_train_pipeline(
         mlflow.set_registry_uri(config.registry_uri)
         mlflow.set_experiment(config.experiment_name)
 
-    best = fetch_best_xgb_params_from_mlflow(
-        experiment_name=config.experiment_name,
-        tracking_uri=config.tracking_uri,
-        metric_key="best_cv_score",
-        search_type_value="randomized",
-        client=client,
-    )
+    best_yaml = load_best_model_yaml(config.best_model_config_path)
+
+    model_name = best_yaml.get("model_name")
+    if model_name not in ("xgboost", "xgb"):
+        raise ValueError(
+            f"best_model.yml: model_name='{model_name}' não suportado. "
+            "Este train.py espera 'xgboost'."
+        )
+
+    xgb_params = best_yaml.get("xgb_params", {})
+    if not isinstance(xgb_params, dict):
+        raise ValueError("best_model.yml: xgb_params deve ser um dict.")
+
+    select_kbest_k = best_yaml.get("select_kbest__k", "all")
+    meta = best_yaml.get("meta", {}) if isinstance(best_yaml.get("meta", {}), dict) else {}
+
+    source_run_id = meta.get("run_id")
+    metric_key = meta.get("metric_key")
+    best_cv_score = meta.get("best_cv_score")
+    experiment_name = meta.get("experiment_name")
+    source = meta.get("source")
 
     estimator = XGBClassifier(
         random_state=config.random_seed,
         n_jobs=-1,
         eval_metric="aucpr",
         verbosity=0,
-        **best.xgb_params,
+        **xgb_params,
     )
 
     trainer = trainer or ChurnModelTrainer(
         n_folds=config.n_folds,
         seed=config.random_seed,
-        k_best=best.select_kbest_k,
+        k_best=select_kbest_k,
     )
     trainer.build(X=X, y=y, model=estimator)
     cv_summary = trainer.train()
@@ -214,18 +242,29 @@ def run_train_pipeline(
         mlflow.log_metrics({f"cv_std_{k}": v for k, v in cv_summary.metrics_std.items()})
 
         mlflow.set_tag("run_type", "final_train")
+        mlflow.set_tag("params_source", "configs/best_model.yml")
         mlflow.log_param("run_type", "final_train")
         mlflow.log_param("model_family", "xgboost")
         mlflow.log_param("cv_folds", config.n_folds)
         mlflow.log_param("random_seed", config.random_seed)
         mlflow.log_param("primary_metric", config.primary_metric)
 
-        mlflow.log_param("source_search_run_id", best.run_id)
-        mlflow.log_metric("source_search_best_cv_score", float(best.best_cv_score))
-        mlflow.log_param("source_search_metric_key", best.metric_key)
+        if source_run_id:
+            mlflow.log_param("source_search_run_id", source_run_id)
+        if metric_key is not None:
+            mlflow.log_param("source_search_metric_key", str(metric_key))
+        if best_cv_score is not None:
+            mlflow.log_metric("source_search_best_cv_score", float(best_cv_score))
+        if experiment_name is not None:
+            mlflow.log_param("source_search_experiment_name", str(experiment_name))
+        if source is not None:
+            mlflow.log_param("source_search_source", str(source))
 
-        mlflow.log_param("select_kbest__k", str(best.select_kbest_k))
-        mlflow.log_params({f"{config.params_prefix}{k}": v for k, v in best.xgb_params.items()})
+        mlflow.log_param("select_kbest__k", str(select_kbest_k))
+        mlflow.log_params({f"{config.params_prefix}{k}": v for k, v in xgb_params.items()})
+
+        if config.best_model_config_path.exists():
+            mlflow.log_artifact(str(config.best_model_config_path), artifact_path="config")
 
         input_example = X.head(50).copy()
         model_uri = log_xgb_end_to_end_pyfunc(
@@ -237,7 +276,6 @@ def run_train_pipeline(
         )
 
         mv = mlflow.register_model(model_uri=model_uri, name=config.registered_model_name)
-
         mlf_client = client or MlflowClient()
         mlf_client.set_registered_model_alias(config.registered_model_name, "prod", mv.version)
 
@@ -249,10 +287,10 @@ def run_train_pipeline(
             "run_name": run_name,
             "model_uri": model_uri,
             "registered_name": config.registered_model_name,
-            "best_params": best.xgb_params,
-            "k_best": best.select_kbest_k,
-            "source_search_run_id": best.run_id,
-            "source_search_best_cv_score": float(best.best_cv_score),
+            "best_params": xgb_params,
+            "k_best": select_kbest_k,
+            "source_search_run_id": source_run_id,
+            "source_search_best_cv_score": best_cv_score,
             "cv_mean": cv_summary.metrics_mean,
             "cv_std": cv_summary.metrics_std,
         }

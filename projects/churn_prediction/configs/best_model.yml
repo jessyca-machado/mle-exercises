@@ -1,0 +1,21 @@
+model_name: xgboost
+registered_model_name: churn_xgb
+select_kbest__k: 20
+
+xgb_params:
+  colsample_bytree: 0.908897907718663
+  gamma: 0.0008585370205937364
+  learning_rate: 0.0010296901472345186
+  max_depth: 4
+  min_child_weight: 0.28677569187725055
+  n_estimators: 591
+  reg_alpha: 0.8241925264876453
+  reg_lambda: 7.126985539523763
+  scale_pos_weight: 6.0
+  subsample: 0.9705203514053395
+
+meta:
+  source: mlflow
+  experiment_name: churn-model-comparison
+  metric_key: best_cv_score
+  best_cv_score: 0.972712897475706
