@@ -11,7 +11,7 @@ import psycopg
 class PredictionRecord:
     request_id: str
     batch_id: str | None
-    item_index: int | None
+    item_index: int
     model_uri: str
     threshold: float
     y_pred: int

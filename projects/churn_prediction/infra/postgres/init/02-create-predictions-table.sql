@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS churn_predictions (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   request_id TEXT NOT NULL,
+  batch_id TEXT NULL,
+  item_index INTEGER NOT NULL,
   model_uri TEXT NOT NULL,
   threshold DOUBLE PRECISION NOT NULL,
   y_pred INTEGER NOT NULL,

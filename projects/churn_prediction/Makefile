@@ -143,6 +143,10 @@ else
 	$(PY_HOST) $(COMPARE_MODELS)
 endif
 
+db-reset: ## destrói e recria tudo do zero
+	docker compose down -v
+	docker compose up -d --build
+
 ## Experimentos utilizando o MODE atual (default: host)
 experiment: ## Executa fluxo de experimento completo: lint, exp, custo, compare
 	$(MAKE) lint MODE=$(MODE)
@@ -154,6 +158,7 @@ experiment: ## Executa fluxo de experimento completo: lint, exp, custo, compare
 ## Pipeline utilizando o MODE atual (default: host)
 pipeline: ## Executa fluxo completo: lint, teste, treino, run
 	$(MAKE) lint MODE=$(MODE)
+	$(MAKE) db-reset MODE=$(MODE)
 	$(MAKE) test MODE=$(MODE)
 	$(MAKE) train MODE=$(MODE)
 	$(MAKE) run MODE=$(MODE)
