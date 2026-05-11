@@ -1,6 +1,6 @@
 # FastAPI em produção com Gunicorn + UvicornWorker.
 # Este Dockerfile assume que:
-# - puproject.toml e uv.lock estão em: projects/churn_prediction/
+# - pyproject.toml e uv.lock estão em: projects/churn_prediction/
 # - o código está em: projects/churn_prediction/src
 #
 # Build (a partir da RAIZ do repo):
@@ -33,22 +33,24 @@ WORKDIR /app
 # copia o binário do uv para o PATH
 COPY --from=uvbin /uv /usr/local/bin/uv
 
-# 2) Copia apenas manifests primeiro (cache)
-COPY pyproject.toml uv.lock README.md requirements-mlflow.txt /app/
+# Cria usuário cedo (para que a venv e /app sejam dele)
+RUN useradd -m -u 10001 appuser \
+    && mkdir -p /app \
+    && chown -R appuser:appuser /app
 
-# 3) Instala dependências travadas do lockfile (com dev)
-RUN uv sync --frozen --extra dev
+# manifests
+COPY --chown=appuser:appuser pyproject.toml uv.lock requirements-mlflow.txt README.md /app/
 
-# cria usuário
-RUN useradd -m -u 10001 appuser
+# instala deps como appuser
+USER appuser
 
-# copia código já com ownership correto
+RUN UV_CACHE_DIR=/tmp/uv-cache uv sync --frozen --extra dev --extra deep && rm -rf /tmp/uv-cache
+
+# copia código com ownership correto
 COPY --chown=appuser:appuser src /app/src
 COPY --chown=appuser:appuser experiments /app/experiments
 COPY --chown=appuser:appuser tests /app/tests
 COPY --chown=appuser:appuser configs /app/configs
-
-USER appuser
 
 EXPOSE 8000
 

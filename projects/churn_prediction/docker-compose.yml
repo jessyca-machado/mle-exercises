@@ -90,8 +90,8 @@ services:
       echo 'MinIO bucket ready'"
 
   mlflow:
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     build:
       context: .
       dockerfile: Dockerfile.mlflow
@@ -162,6 +162,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 20
+      start_period: 90s
 
   prometheus:
     image: prom/prometheus:v2.55.0

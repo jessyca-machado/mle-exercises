@@ -13,7 +13,7 @@ Execução (dev):
     make run
 
 Execução (manual):
-   - Linux/macOS:
+    - Linux/macOS:
         export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
         export MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
         export CHURN_MODEL_URI="models:/churn_xgb@prod"
@@ -34,6 +34,8 @@ Uso:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import contextvars
 import hmac
 import logging
@@ -103,6 +105,53 @@ if not logger.handlers:
 
 
 MODEL_STATE: dict[str, Any] = {}
+
+
+MODEL_STATE["loaded_event"] = asyncio.Event()
+MODEL_STATE["model_error"] = None
+MODEL_STATE["loader_task"] = None
+
+
+async def _load_model_with_retry(cfg: PredictConfig) -> None:
+    """
+    Tenta carregar o modelo com retry e NÃO derruba a API se falhar.
+    Sinaliza prontidão via MODEL_STATE["loaded_event"].
+    """
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
+    mlflow.set_registry_uri(cfg.registry_uri)
+
+    model_uri = resolve_model_uri(cfg)
+    MODEL_STATE["model_uri"] = model_uri
+    MODEL_STATE["default_threshold"] = cfg.threshold
+
+    delay = 5
+    max_delay = 60
+    attempt = 0
+
+    while True:
+        attempt += 1
+        try:
+            logger.info("loading_model", extra={"model_uri": model_uri, "attempt": attempt})
+
+            model = await asyncio.to_thread(load_pyfunc_model, model_uri, cfg.registry_uri)
+            MODEL_STATE["model"] = model
+            MODEL_STATE["model_error"] = None
+            MODEL_STATE["loaded_event"].set()
+            logger.info("startup_complete", extra={"model_uri": model_uri})
+            return
+        except Exception as e:
+            MODEL_STATE["model_error"] = str(e)
+            logger.warning(
+                "model_load_retry",
+                extra={
+                    "model_uri": model_uri,
+                    "attempt": attempt,
+                    "delay_seconds": delay,
+                    "error": MODEL_STATE["model_error"],
+                },
+            )
+            await asyncio.sleep(delay)
+            delay = min(max_delay, int(delay * 1.5))
 
 
 class LatencyLoggingMiddleware(BaseHTTPMiddleware):
@@ -251,20 +300,16 @@ def verify_api_key(request: Request) -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = get_predict_config()
 
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
-    mlflow.set_registry_uri(cfg.registry_uri)
+    MODEL_STATE["loaded_event"].clear()
+    MODEL_STATE["loader_task"] = asyncio.create_task(_load_model_with_retry(cfg))
 
-    model_uri = resolve_model_uri(cfg)
-    logger.info("loading_model", extra={"model_uri": model_uri})
-
-    model = load_pyfunc_model(model_uri, registry_uri=cfg.registry_uri)
-
-    MODEL_STATE["model"] = model
-    MODEL_STATE["model_uri"] = model_uri
-    MODEL_STATE["default_threshold"] = cfg.threshold
-
-    logger.info("startup_complete", extra={"model_uri": model_uri})
     yield
+
+    task = MODEL_STATE.get("loader_task")
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     MODEL_STATE.clear()
     logger.info("shutdown_complete")
@@ -347,9 +392,19 @@ def health_check() -> dict[str, str]:
 @app.get("/ready", dependencies=[Depends(verify_api_key)])
 @limiter.limit("120/minute")
 def readiness_check(request: Request) -> dict[str, str]:
-    if "model" not in MODEL_STATE:
-        raise HTTPException(status_code=503, detail="Modelo não disponível")
+    loaded = MODEL_STATE.get("loaded_event")
+    if not loaded or not loaded.is_set() or "model" not in MODEL_STATE:
+        err = MODEL_STATE.get("model_error")
+        detail = "Modelo não disponível" + (f" | {err}" if err else "")
+        raise HTTPException(status_code=503, detail=detail)
+
     return {"status": "ready", "model_uri": MODEL_STATE.get("model_uri", "")}
+
+
+def _require_model():
+    loaded = MODEL_STATE.get("loaded_event")
+    if not loaded or not loaded.is_set() or "model" not in MODEL_STATE:
+        raise HTTPException(status_code=503, detail="Modelo não disponível")
 
 
 @app.post("/predict", response_model=ChurnPredictResponse, dependencies=[Depends(verify_api_key)])
@@ -360,8 +415,7 @@ def predict(
     background_tasks: BackgroundTasks,
     threshold: Optional[float] = None,
 ) -> ChurnPredictResponse:
-    if "model" not in MODEL_STATE:
-        raise HTTPException(status_code=503, detail="Modelo não disponível")
+    _require_model()
 
     model = MODEL_STATE["model"]
     model_uri: str = MODEL_STATE.get("model_uri", "")
@@ -429,8 +483,7 @@ def predict_batch(
     payload: ChurnBatchPredictRequest,
     background_tasks: BackgroundTasks,
 ) -> ChurnBatchPredictResponse:
-    if "model" not in MODEL_STATE:
-        raise HTTPException(status_code=503, detail="Modelo não disponível")
+    _require_model()
 
     model = MODEL_STATE["model"]
     model_uri: str = MODEL_STATE.get("model_uri", "")
