@@ -68,12 +68,21 @@ Este repositório implementa um modelo de churn para identificar clientes com al
     - Usa uv para instalar dependências e rodar scripts no host.
     - Útil principalmente para rodar experiments/ localmente.
 
-
-### Sobre dependências e lockfile
+### Sobre dependências, extras e lockfile (uv)
 - As dependências estão em `pyproject.toml`.
 - O arquivo `uv.lock` registra versões exatas para reproduzir o ambiente.
-- Para trabalhar com notebooks, é utilizado o `ipykernel` como dependência de desenvolvimento (extra dev).
-- O docker também consome as dependências do `uv.lock`.
+- O projeto usa **extras** para separar dependências por finalidade:
+  - **Core (default)**: dependências necessárias para rodar a API e o pipeline principal (ex.: FastAPI, MLflow, XGBoost, pandas, etc.).
+  - **extra `dev`**: ferramentas de desenvolvimento e testes (ex.: `ruff`, `pytest`, `ipykernel`, `pre-commit`, etc.).
+  - **extra `deep`**: dependências de deep learning para os experimentos em PyTorch (ex.: `torch`, `skorch`).
+
+#### Quando usar o extra deep?
+- Para rodar o experimento de MLP em PyTorch (`experiments/deep_learning/train_mlp_torch.py`):
+  - Instale **core + dev + deep**.
+
+**Observação:**
+- A imagem Docker da API inclui o extra `dev` para permitir rodar `ruff/pytest` dentro do container (targets `lint`/`test` com `MODE=docker`).
+- O extra `deep` (PyTorch) é necessário para o experimento MLP. Se você rodar `make exp-mlp MODE=host`, instale com `make install-deep`.
 
 ## Configurar ambiente
 ```bash
@@ -100,8 +109,12 @@ cd projects/churn_prediction
 uv venv .venv
 ```
 ```bash
-# Instale as dependências conforme o `uv.lock` (ou gere/atualize o lock quando necessário)
+# Instalar core + dev (lint/test/notebooks)
 uv sync --extra dev
+```
+```bash
+# Instalar também o extra deep (necessário para experimentos com PyTorch/MLP):
+uv sync --extra dev --extra deep
 ```
 ```bash
 # Ative o venv
@@ -113,16 +126,30 @@ source .venv/bin/activate  # Linux/Mac
 - Todas as etapas são registradas no mlflow.
 - Os parâmetros do melhor modelo do experimento (`xgboost`), utilizados na pipeline, estão [nesse caminho](configs/best_model.yml).
 
+### Nota sobre o endpoint `/ready` (warmup do modelo)
+- A API carrega o modelo do MLflow **de forma assíncrona** na inicialização.
+- Durante alguns segundos (enquanto o modelo ainda não foi carregado), o endpoint `/ready` pode retornar **HTTP 503**.
+- Assim que o modelo termina de carregar, `/ready` passa a retornar **HTTP 200** e a API fica pronta para receber predições.
+
 ### Um único comando
-#### Pipeline Docker
-Rodar pipeline: teste + treino + api
+#### Pipeline Docker (padrão)
+Executa o fluxo padrão (lint → testes → treino → sobe API) **sem apagar volumes**.
 ```bash
 cd projects/churn_prediction
 make pipeline-docker
 ```
 
+#### Pipeline Docker (do zero)
+Reinicia a stack do zero (docker compose down -v), apagando volumes do Postgres/MinIO, etc. Remove histórico do MLflow e artifacts
+```bash
+cd projects/churn_prediction
+make pipeline-clean
+```
+
 #### Experimentos Docker
-Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos
+Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos.
+> Observação: A imagem Docker do serviço `api` instala `--extra dev --extra deep` para permitir rodar `ruff/pytest` e o experimento MLP (PyTorch) dentro do container.
+> Isso aumenta o tamanho e o tempo de build da imagem.
 ```bash
 cd projects/churn_prediction
 make experiment-docker
@@ -139,11 +166,13 @@ make pipeline-host
 Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos
 ```bash
 cd projects/churn_prediction
+make install-deep
 make experiment-host
 ```
 
 ### Comandos (Makefile) (cross-platform)
-inclua o MODE=docker após os comandos se for rodar com Docker.
+Os comandos aceitam `MODE=docker` para rodar dentro do Docker Compose e `MODE=host` para rodar no host.
+Atalhos disponíveis: `pipeline-docker`, `pipeline-host`, `experiment-docker`, `experiment-host`.
 
 | Comando | Tempo estimado (Docker) | Descrição |
 |---|---:|---|
@@ -157,29 +186,48 @@ inclua o MODE=docker após os comandos se for rodar com Docker.
 
 ## Utilizar endpoints API
 ```bash
-# Linux/macOS
-# carregar variáveis do .env e utiliza o endpoint.
-cd projects/churn_prediction
+## Linux/MacOS
 set -a; source .env; set +a
+API_URL="$API_URL_DOCKER"
+curl -fsS "$API_URL/health" >/dev/null 2>&1 || API_URL="$API_URL_HOST"
+until curl -fsS -H "X-API-Key: $CHURN_API_KEY" "$API_URL/ready" >/dev/null; do
+  echo "Aguardando modelo carregar em $API_URL ..."
+  sleep 2
+done
 curl -s -X POST "$API_URL/predict" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $CHURN_API_KEY" \
   --data-binary @examples/payload.json
+echo
 ```
 ```bash
-# Windows (PowerShell)
-# carregar variáveis do .env e utiliza o endpoint
-cd projects/churn_prediction
+# PowerShell (Windows)
 Get-Content .env | ForEach-Object {
   if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
   $k, $v = $_ -split '=', 2
   [Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), "Process")
 }
-
-curl.exe -s -X POST "$env:API_URL/predict" `
+$API_URL = $env:API_URL_DOCKER
+try {
+  curl.exe -fsS "$API_URL/health" | Out-Null
+} catch {
+  $API_URL = $env:API_URL_HOST
+}
+Write-Host "Usando API_URL=$API_URL"
+while ($true) {
+  try {
+    curl.exe -fsS -H "X-API-Key: $env:CHURN_API_KEY" "$API_URL/ready" | Out-Null
+    break
+  } catch {
+    Write-Host "Aguardando modelo carregar em $API_URL ..."
+    Start-Sleep -Seconds 2
+  }
+}
+curl.exe -s -X POST "$API_URL/predict" `
   -H "Content-Type: application/json" `
   -H "X-API-Key: $env:CHURN_API_KEY" `
   --data-binary "@examples/payload.json"
+Write-Host ""
 ```
 
 ## Estrutura do repositório
@@ -291,4 +339,4 @@ curl.exe -s -X POST "$env:API_URL/predict" `
 - [XGBoost Documentation](https://xgboost.readthedocs.io/en/release_3.2.0/)
 
 ## LICENSE
-Veja o arquivo [LICENSE](https://github.com/jessyca-machado/mle-exercises/blob/main/LICENSE).
+[MIT LICENSE](https://github.com/jessyca-machado/mle-exercises/blob/main/LICENSE).

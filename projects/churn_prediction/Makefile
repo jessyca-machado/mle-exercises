@@ -25,7 +25,8 @@ COMPARE_MODELS := experiments/selection/compare_models.py
 ## API host run
 API_MODULE := src.api.app:app
 API_HOST ?= 0.0.0.0
-API_PORT ?= 8001
+API_PORT_HOST ?= 8001
+API_PORT_DOCKER ?= 8000
 
 ## para testes no host sem redis
 RATE_LIMIT_STORAGE_URI ?= memory://
@@ -37,7 +38,7 @@ RUFF_CACHE_DIR ?= .ruff_cache
 RUFF ?= uv run ruff
 
 .PHONY: help lint test run up down build rebuild logs shell \
-        train exp-sklearn exp-mlp pipeline pipeline-docker pipeline-host cost compare-models
+        train exp-sklearn exp-mlp pipeline pipeline-clean pipeline-docker pipeline-host cost compare-models stop-api
 
 help: ## Mostra esta ajuda
 	@echo "Usage:"
@@ -58,8 +59,11 @@ help: ## Mostra esta ajuda
 	@echo "  make exp-mlp [MODE=host|docker]"
 
 
-install:  ## instala todas as dependências (treino + dev)
+install-dev:  ## instala dependências de desenvolvimento (host)
 	uv sync --extra dev
+
+install-deep: ## instala dependências p/ experimentos deep learning (host)
+	uv sync --extra dev --extra deep
 
 lint: ## Executa Ruff para checar estilo e erros
 ifeq ($(MODE),docker)
@@ -77,12 +81,20 @@ else
 	$(PYTEST_HOST) -vv
 endif
 
+stop-api: ## Para a API (host e docker) para evitar conflito de porta
+	@echo "Parando API no Docker (se existir)..."
+	@docker compose stop $(API_SERVICE) >/dev/null 2>&1 || true
+	@echo "Matando processo no host que está ouvindo em :$(API_PORT_HOST)..."
+	@lsof -tiTCP:$(API_PORT_HOST) -sTCP:LISTEN >/dev/null 2>&1 && \
+		kill -9 $$(lsof -tiTCP:$(API_PORT_HOST) -sTCP:LISTEN) || true
+
 run: ## Sobe a API (Docker ou host)
 ifeq ($(MODE),docker)
 	docker compose up -d $(API_SERVICE)
 	docker compose logs -f $(API_SERVICE)
 else
-	uvicorn $(API_MODULE) --host $(API_HOST) --port $(API_PORT) --reload
+	$(MAKE) stop-api MODE=host
+	uvicorn $(API_MODULE) --host $(API_HOST) --port $(API_PORT_HOST) --reload
 endif
 
 ## Docker helpers (quando MODE=docker)
@@ -112,7 +124,7 @@ else
 	$(PY_HOST) $(EXP_SKLEARN)
 endif
 
-exp-mlp: ## Executa experimento MLP PyTorch: treino e avaliação
+exp-mlp: ## Executa experimento MLP PyTorch: treino e avaliação (host requer extra 'deep')
 ifeq ($(MODE),docker)
 	docker compose run --rm $(API_SERVICE) $(PY_DOCKER) $(EXP_MLP_TORCH)
 else
@@ -142,8 +154,12 @@ else
 endif
 
 db-reset: ## destrói e recria tudo do zero
+ifeq ($(MODE),docker)
 	docker compose down -v
 	docker compose up -d --build
+else
+	@echo "db-reset só faz sentido com MODE=docker" && exit 2
+endif
 
 ## Experimentos utilizando o MODE atual (default: host)
 experiment: ## Executa fluxo de experimento completo: lint, exp, custo, compare
@@ -154,12 +170,19 @@ experiment: ## Executa fluxo de experimento completo: lint, exp, custo, compare
 	$(MAKE) compare-models MODE=$(MODE)
 
 ## Pipeline utilizando o MODE atual (default: host)
-pipeline: ## Executa fluxo completo: lint, teste, treino, run
+pipeline: ## Fluxo padrão (não destrói volumes): lint, test, train, run
+	$(MAKE) stop-api MODE=$(MODE)
 	$(MAKE) lint MODE=$(MODE)
-	$(MAKE) db-reset MODE=$(MODE)
 	$(MAKE) test MODE=$(MODE)
 	$(MAKE) train MODE=$(MODE)
 	$(MAKE) run MODE=$(MODE)
+
+pipeline-clean: ## Fluxo do zero (apaga volumes): lint, reset, test, train, run. Utilizar apenas com Docker
+	$(MAKE) lint MODE=docker
+	$(MAKE) db-reset MODE=docker
+	$(MAKE) test MODE=docker
+	$(MAKE) train MODE=docker
+	$(MAKE) run MODE=docker
 
 ## Atalhos explícitos
 pipeline-host: ## Executa pipeline completa no ambiente do host

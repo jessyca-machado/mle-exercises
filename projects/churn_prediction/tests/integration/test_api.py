@@ -1,4 +1,5 @@
 import os
+import time
 
 import mlflow
 import pytest
@@ -9,6 +10,20 @@ from src.core.models.trainer import ChurnModelTrainer
 from src.jobs.train import log_xgb_end_to_end_pyfunc
 
 TEST_API_KEY = "test-api-key"
+
+
+def wait_ready(client: TestClient, timeout_s: float = 10.0, interval_s: float = 0.1) -> None:
+    deadline = time.time() + timeout_s
+    last = None
+    while time.time() < deadline:
+        last = client.get("/ready")
+        if last.status_code == 200:
+            return
+        time.sleep(interval_s)
+
+    raise AssertionError(
+        f"API não ficou ready em {timeout_s}s. last={last.status_code} body={last.text}"
+    )
 
 
 def _setup_temp_mlflow(tmp_path) -> tuple[str, str]:
@@ -82,9 +97,8 @@ def api_client(tmp_path_factory, X_y, request) -> TestClient:
         - treina + registra um modelo
         - sobe a API via TestClient apontando para esse modelo
     """
-    # env obrigatório pra auth (lido no import do app)
     os.environ["CHURN_API_KEY"] = TEST_API_KEY
-    # (opcional) permite rodar no host sem Redis:
+
     os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 
     tmp_path = tmp_path_factory.mktemp("api_hermetic")
@@ -104,6 +118,9 @@ def api_client(tmp_path_factory, X_y, request) -> TestClient:
 
     with TestClient(app) as client:
         client.headers.update({"X-API-Key": TEST_API_KEY})
+
+        wait_ready(client, timeout_s=15)
+
         yield client
 
 
