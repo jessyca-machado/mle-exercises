@@ -4,14 +4,12 @@ include .env
 export
 endif
 
-SHELL := /bin/bash
-
 ## MODE=host (default) ou MODE=docker
 MODE ?= host
 
 API_SERVICE ?= api
-PY_HOST ?= python
-PYTEST_HOST ?= pytest
+PY_HOST ?= uv run python
+PYTEST_HOST ?= uv run pytest
 
 PY_DOCKER := uv run python
 PYTEST_DOCKER := uv run pytest
@@ -33,10 +31,10 @@ API_PORT ?= 8001
 RATE_LIMIT_STORAGE_URI ?= memory://
 export RATE_LIMIT_STORAGE_URI
 
-RUFF_CACHE_DIR=/tmp/ruff_cache
+RUFF_CACHE_DIR ?= .ruff_cache
 
 ## lint tools
-RUFF ?= ruff
+RUFF ?= uv run ruff
 
 .PHONY: help lint test run up down build rebuild logs shell \
         train exp-sklearn exp-mlp pipeline pipeline-docker pipeline-host cost compare-models
@@ -76,7 +74,7 @@ test: ## Roda pytest
 ifeq ($(MODE),docker)
 	docker compose run --rm $(API_SERVICE) $(PYTEST_DOCKER) -vv
 else
-	RATE_LIMIT_STORAGE_URI=$(RATE_LIMIT_STORAGE_URI) $(PYTEST_HOST) -vv
+	$(PYTEST_HOST) -vv
 endif
 
 run: ## Sobe a API (Docker ou host)
@@ -104,7 +102,7 @@ logs: ## Acompanha logs da API em tempo real
 	docker compose logs -f $(API_SERVICE)
 
 shell: ## Abre shell interativo dentro do container da API
-	docker compose run --rm $(API_SERVICE) sh
+	docker compose run --rm $(API_SERVICE) /bin/sh
 
 ## Train / Experiments
 exp-sklearn: ## Executa experimento scikit-learn: treino e avaliação

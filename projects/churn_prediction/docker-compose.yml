@@ -80,8 +80,6 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-      redis:
-        condition: service_started
     networks:
       - churn-net
     entrypoint: >
@@ -136,8 +134,8 @@ services:
     env_file:
       - .env
     environment:
-      MLFLOW_TRACKING_URI: http://mlflow-proxy
-      MLFLOW_REGISTRY_URI: http://mlflow-proxy
+      MLFLOW_TRACKING_URI: http://mlflow-proxy:80
+      MLFLOW_REGISTRY_URI: http://mlflow-proxy:80
       CHURN_MODEL_URI: ${CHURN_MODEL_URI:-models:/churn_xgb@prod}
       CHURN_THRESHOLD: ${CHURN_THRESHOLD:-0.5}
       AWS_ACCESS_KEY_ID: minio
@@ -152,7 +150,15 @@ services:
     networks:
       - churn-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H \"X-API-Key: $CHURN_API_KEY\" http://localhost:8000/ready"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "-H",
+          "X-API-Key: ${CHURN_API_KEY}",
+          "http://localhost:8000/ready"
+        ]
       interval: 10s
       timeout: 3s
       retries: 20

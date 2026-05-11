@@ -24,7 +24,7 @@ def _setup_temp_mlflow(tmp_path) -> tuple[str, str]:
     db_path = (tmp_path / "mlflow.db").resolve()
     artifacts_dir = (tmp_path / "mlartifacts").resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    tracking_uri = f"sqlite:////{db_path}"
+    tracking_uri = f"sqlite:///{db_path.as_posix()}"
     registry_uri = tracking_uri
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_registry_uri(registry_uri)

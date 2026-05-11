@@ -9,6 +9,8 @@ Para visualizar:
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
@@ -26,6 +28,8 @@ from src.utils.constants import (
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
 )
+
+logger = logging.getLogger("churn_api")
 
 
 @dataclass(frozen=True)
@@ -73,12 +77,41 @@ def resolve_model_uri(config: PredictConfig, client: Optional[MlflowClient] = No
     return get_latest_model_uri(client, config.model_name)
 
 
-def load_pyfunc_model(model_uri: str, registry_uri: str):
+def load_pyfunc_model(
+    model_uri: str,
+    registry_uri: str | None = None,
+    retries: int = 12,
+    delay: int = 5,
+):
     """
     Carrega um modelo MLflow PyFunc.
     """
-    mlflow.set_registry_uri(registry_uri)
-    return mlflow.pyfunc.load_model(model_uri)
+    if registry_uri:
+        mlflow.set_registry_uri(registry_uri)
+
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            return mlflow.pyfunc.load_model(model_uri)
+
+        except Exception as exc:
+            last_error = exc
+
+            logger.warning(
+                "model_load_retry",
+                extra={
+                    "attempt": attempt,
+                    "retries": retries,
+                    "delay_seconds": delay,
+                    "error": str(exc),
+                    "model_uri": model_uri,
+                },
+            )
+
+            time.sleep(delay)
+
+    raise last_error
 
 
 def _as_1d_float_array(raw: Any) -> np.ndarray:

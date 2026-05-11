@@ -209,8 +209,6 @@ curl.exe -s -X POST "$env:API_URL/predict" `
     │       └── prometheus.yml                  # Targets e regras de coleta de métricas
     ├── notebooks
     │   └── eda.ipynb                           # Análise exploratória de dados
-    ├── scripts
-    │   └── run_api.sh                          # Script para subir a API
     ├── src
     │   ├── api
     │   │   ├── app.py                          # Aplicação da API e endpoints

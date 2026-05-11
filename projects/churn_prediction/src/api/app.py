@@ -10,14 +10,22 @@ Recursos:
     - Preparado para testes com TestClient
 
 Execução (dev):
-    bash scripts/run_api.sh
+    make run
 
 Execução (manual):
-    export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
-    export MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
-    export CHURN_MODEL_URI="models:/churn_xgb@prod"
-    export CHURN_THRESHOLD="0.5"
-    uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+   - Linux/macOS:
+        export MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
+        export MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
+        export CHURN_MODEL_URI="models:/churn_xgb@prod"
+        export CHURN_THRESHOLD="0.5"
+
+    - Windows PowerShell:
+        $env:MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
+        $env:MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
+        $env:CHURN_MODEL_URI="models:/churn_xgb@prod"
+        $env:CHURN_THRESHOLD="0.5"
+
+    - uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
 
 Uso:
     Em outro terminal faz a chamada para enviar os dados: curl -s http://localhost:8000/ready

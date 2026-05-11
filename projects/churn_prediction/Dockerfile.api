@@ -39,21 +39,15 @@ COPY pyproject.toml uv.lock README.md requirements-mlflow.txt /app/
 # 3) Instala dependências travadas do lockfile (com dev)
 RUN uv sync --frozen --extra dev
 
-# 4) Copia o código depois
-COPY src /app/src
+# cria usuário
+RUN useradd -m -u 10001 appuser
 
-# utilizar experiments dentro do container:
-COPY experiments /app/experiments
+# copia código já com ownership correto
+COPY --chown=appuser:appuser src /app/src
+COPY --chown=appuser:appuser experiments /app/experiments
+COPY --chown=appuser:appuser tests /app/tests
+COPY --chown=appuser:appuser configs /app/configs
 
-# testes dentro do container:
-COPY tests /app/tests
-
-# configs dentro do container:
-COPY configs /app/configs
-
-# Usuário não-root
-RUN useradd -m -u 10001 appuser \
-    && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
@@ -71,6 +65,7 @@ CMD ["sh", "-c", "\
 /app/.venv/bin/gunicorn src.api.app:app \
     -k uvicorn.workers.UvicornWorker \
     --bind 0.0.0.0:8000 \
+    --preload \
     --workers ${WEB_CONCURRENCY} \
     --timeout ${GUNICORN_TIMEOUT} \
     --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT} \
