@@ -57,9 +57,6 @@
         │   └── eda.ipynb
         ├── pyproject.toml
         ├── requirements-mlflow.txt
-        ├── scripts
-        │   ├── __init__.py
-        │   └── run_api.sh
         ├── src
         │   ├── __init__.py
         │   ├── api
@@ -123,6 +120,6 @@
         │       └── test_trainer_predict_pyfunc_mode.py
         └── uv.lock
 
-35 directories, 83 files
+34 directories, 81 files
 ```
 <!-- TREE:END -->
