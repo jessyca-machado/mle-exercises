@@ -51,11 +51,14 @@ Este repositório implementa um modelo de churn para identificar clientes com al
   - Drift PSI via drift.py → salva em drift_metrics.
 
 ## Pré-requisito:
-- Docker e Docker Compose para rodar a stack completa + make.
-- Modo host: Python 3.12 + uv + make.
+- Docker
+- Docker Compose
+- Make. Para Windows, instalar via WSL2, Chocolatey ou GnuWin32
+- UV
+- Python 3.12
 
 **Instalação:**
-- Docker: https://docs.docker.com/get-docker/.
+- Docker: https://docs.docker.com/get-docker/. Para Windows, é preciso possuir o backend Linux WSL2, as instruções estão na mesma documentação.
 - uv: https://docs.astral.sh/uv/getting-started/installation/.
 
 ### É possível trabalhar de duas formas:
@@ -137,6 +140,12 @@ Executa o fluxo padrão (lint → testes → treino → sobe API) **sem apagar v
 ```bash
 cd projects/churn_prediction
 make pipeline-docker
+# OU
+cd projects/churn_prediction
+docker compose run --rm api uv run pytest -vv
+docker compose run --rm api uv run python src/jobs/train.py
+docker compose up -d api
+docker compose logs -f api
 ```
 
 #### Pipeline Docker (do zero)
@@ -144,6 +153,14 @@ Reinicia a stack do zero (docker compose down -v), apagando volumes do Postgres/
 ```bash
 cd projects/churn_prediction
 make pipeline-clean
+# OU
+cd projects/churn_prediction
+docker compose down -v
+docker compose up -d --build
+docker compose run --rm api uv run pytest -vv
+docker compose run --rm api uv run python src/jobs/train.py
+docker compose up -d api
+docker compose logs -f api
 ```
 
 #### Experimentos Docker
@@ -153,6 +170,12 @@ Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hip
 ```bash
 cd projects/churn_prediction
 make experiment-docker
+# OU
+cd projects/churn_prediction
+docker compose run --rm api uv run python experiments/comparison/train_sklearn.py
+docker compose run --rm api uv run python experiments/deep_learning/train_mlp_torch.py
+docker compose run --rm api uv run python experiments/selection/cost_toolkit_metrics.py
+docker compose run --rm api uv run python experiments/selection/compare_models.py
 ```
 
 #### Pipeline Host
@@ -160,14 +183,24 @@ Rodar pipeline: teste + treino + api
 ```bash
 cd projects/churn_prediction
 make pipeline-host
+# OU
+cd projects/churn_prediction
+uv run pytest -vv
+uv run python src/jobs/train.py
+uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 #### Experimentos Host
 Rodar experimentos sklearn + MLP com Pytorch + trade-off de custo + teste de hipóteses entre modelos
 ```bash
 cd projects/churn_prediction
-make install-deep
 make experiment-host
+# OU
+cd projects/churn_prediction
+uv run python experiments/comparison/train_sklearn.py
+uv run python experiments/deep_learning/train_mlp_torch.py
+uv run python experiments/selection/cost_toolkit_metrics.py
+uv run python experiments/selection/compare_models.py
 ```
 
 ### Comandos (Makefile) (cross-platform)
