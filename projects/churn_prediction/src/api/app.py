@@ -48,7 +48,6 @@ from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
-import numpy as np
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
@@ -145,7 +144,6 @@ async def _load_model_with_retry(cfg: PredictConfig) -> None:
             logger.info("startup_complete", extra={"model_uri": model_uri})
             return
         except Exception as e:
-            import traceback
             MODEL_STATE["model"] = None
             MODEL_STATE["model_error"] = str(e)
             logger.warning(
@@ -155,7 +153,7 @@ async def _load_model_with_retry(cfg: PredictConfig) -> None:
                     "attempt": attempt,
                     "delay_seconds": delay,
                     "error": MODEL_STATE["model_error"],
-                }
+                },
             )
             logger.exception(
                 "model_load_failed",
@@ -438,10 +436,7 @@ def predict(
 
     model = MODEL_STATE["model"]
     if model is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Modelo ainda não carregado pelo MLflow"
-        )
+        raise HTTPException(status_code=503, detail="Modelo ainda não carregado pelo MLflow")
 
     model_uri: str = MODEL_STATE.get("model_uri", "")
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
