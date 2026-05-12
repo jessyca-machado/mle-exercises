@@ -51,11 +51,12 @@ Este repositório implementa um modelo de churn para identificar clientes com al
   - Drift PSI via drift.py → salva em drift_metrics.
 
 ## Pré-requisito:
-- Docker
-- Docker Compose
-- Make. Para Windows, instalar via WSL2, Chocolatey ou GnuWin32
-- UV
 - Python 3.12
+- Docker + Docker Compose (para stack completa)
+- UV
+- Make. Para Windows, instalar/ utilizar via WSL2
+- CPU. Inferência funciona totalmente em CPU
+- 8-16 GB RAM
 
 **Instalação:**
 - Docker: https://docs.docker.com/get-docker/. Para Windows, é preciso possuir o backend Linux WSL2, as instruções estão na mesma documentação.
@@ -128,6 +129,18 @@ source .venv/bin/activate  # Linux/Mac
 ## Reproduzir o treino
 - Todas as etapas são registradas no mlflow.
 - Os parâmetros do melhor modelo do experimento (`xgboost`), utilizados na pipeline, estão [nesse caminho](configs/best_model.yml).
+
+### Obrigatoriedade
+Antes de rodar a API, certifique-se de que os seguintes serviços estão ativos:
+#### MLflow Tracking Server
+A API depende do MLflow para carregar o modelo registrado.
+```bash
+make run-mlflow
+# OU
+mlflow server --host 0.0.0.0 --port 5001
+```
+#### Variáveis de ambiente
+- As variáveis de ambiente, via `.env`, foram criadas conforme o tópico [Configurar ambiente].(#configurar-ambiente)
 
 ### Nota sobre o endpoint `/ready` (warmup do modelo)
 - A API carrega o modelo do MLflow **de forma assíncrona** na inicialização.
@@ -236,31 +249,17 @@ echo
 ```bash
 # PowerShell (Windows)
 Get-Content .env | ForEach-Object {
-  if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
-  $k, $v = $_ -split '=', 2
-  [Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), "Process")
+  if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return } 
+  $name, $value = $_ -split '=', 2
+  Set-Item "Env:$name" $value
 }
-$API_URL = $env:API_URL_DOCKER
-try {
-  curl.exe -fsS "$API_URL/health" | Out-Null
-} catch {
-  $API_URL = $env:API_URL_HOST
-}
-Write-Host "Usando API_URL=$API_URL"
-while ($true) {
-  try {
-    curl.exe -fsS -H "X-API-Key: $env:CHURN_API_KEY" "$API_URL/ready" | Out-Null
-    break
-  } catch {
-    Write-Host "Aguardando modelo carregar em $API_URL ..."
-    Start-Sleep -Seconds 2
-  }
-}
-curl.exe -s -X POST "$API_URL/predict" `
+
+uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload                  
+
+curl.exe -s -X POST "http://localhost:8001/predict" `
   -H "Content-Type: application/json" `
-  -H "X-API-Key: $env:CHURN_API_KEY" `
+  -H "X-API-Key: dev-token" `
   --data-binary "@examples/payload.json"
-Write-Host ""
 ```
 
 ## Estrutura do repositório

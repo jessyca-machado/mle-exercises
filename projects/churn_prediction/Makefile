@@ -37,7 +37,7 @@ RUFF_CACHE_DIR ?= .ruff_cache
 ## lint tools
 RUFF ?= uv run ruff
 
-.PHONY: help lint test run up down build rebuild logs shell \
+.PHONY: help lint test run up down build rebuild logs shell run-mlflow \
         train exp-sklearn exp-mlp pipeline pipeline-clean pipeline-docker pipeline-host cost compare-models stop-api
 
 help: ## Mostra esta ajuda
@@ -96,6 +96,9 @@ else
 	$(MAKE) stop-api MODE=host
 	uvicorn $(API_MODULE) --host $(API_HOST) --port $(API_PORT_HOST) --reload
 endif
+
+run-mlflow:
+	mlflow server --host 0.0.0.0 --port 5001
 
 ## Docker helpers (quando MODE=docker)
 up: ## Sobe todos os serviços do Docker Compose em background

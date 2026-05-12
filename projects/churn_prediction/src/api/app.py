@@ -20,12 +20,12 @@ Execução (manual):
         export CHURN_THRESHOLD="0.5"
 
     - Windows PowerShell:
-        $env:MLFLOW_TRACKING_URI="sqlite:///mlflow.db"
-        $env:MLFLOW_REGISTRY_URI="sqlite:///mlflow.db"
+        $env:MLFLOW_TRACKING_URI="http://localhost:5001"
+        $env:MLFLOW_REGISTRY_URI="http://localhost:5001"
         $env:CHURN_MODEL_URI="models:/churn_xgb@prod"
         $env:CHURN_THRESHOLD="0.5"
 
-    - uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+    - uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload
 
 Uso:
     Em outro terminal faz a chamada para enviar os dados: curl -s http://localhost:8000/ready
@@ -48,6 +48,7 @@ from typing import Any, List, Optional
 
 import mlflow
 import pandas as pd
+import numpy as np
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
@@ -124,6 +125,10 @@ async def _load_model_with_retry(cfg: PredictConfig) -> None:
     MODEL_STATE["model_uri"] = model_uri
     MODEL_STATE["default_threshold"] = cfg.threshold
 
+    MODEL_STATE["model"] = None
+    MODEL_STATE["model_error"] = None
+    MODEL_STATE["loaded_event"].clear()
+
     delay = 5
     max_delay = 60
     attempt = 0
@@ -140,6 +145,8 @@ async def _load_model_with_retry(cfg: PredictConfig) -> None:
             logger.info("startup_complete", extra={"model_uri": model_uri})
             return
         except Exception as e:
+            import traceback
+            MODEL_STATE["model"] = None
             MODEL_STATE["model_error"] = str(e)
             logger.warning(
                 "model_load_retry",
@@ -148,6 +155,15 @@ async def _load_model_with_retry(cfg: PredictConfig) -> None:
                     "attempt": attempt,
                     "delay_seconds": delay,
                     "error": MODEL_STATE["model_error"],
+                }
+            )
+            logger.exception(
+                "model_load_failed",
+                extra={
+                    "model_uri": model_uri,
+                    "attempt": attempt,
+                    "delay_seconds": delay,
+                    "error": str(e),
                 },
             )
             await asyncio.sleep(delay)
@@ -300,16 +316,18 @@ def verify_api_key(request: Request) -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = get_predict_config()
 
+    MODEL_STATE["model"] = None
+    MODEL_STATE["model_error"] = None
     MODEL_STATE["loaded_event"].clear()
-    MODEL_STATE["loader_task"] = asyncio.create_task(_load_model_with_retry(cfg))
+
+    task = asyncio.create_task(_load_model_with_retry(cfg))
+    MODEL_STATE["loader_task"] = task
 
     yield
 
-    task = MODEL_STATE.get("loader_task")
-    if task and not task.done():
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
     MODEL_STATE.clear()
     logger.info("shutdown_complete")
@@ -403,7 +421,8 @@ def readiness_check(request: Request) -> dict[str, str]:
 
 def _require_model():
     loaded = MODEL_STATE.get("loaded_event")
-    if not loaded or not loaded.is_set() or "model" not in MODEL_STATE:
+    model = MODEL_STATE.get("model")
+    if not loaded or not loaded.is_set() or model is None:
         raise HTTPException(status_code=503, detail="Modelo não disponível")
 
 
@@ -418,6 +437,12 @@ def predict(
     _require_model()
 
     model = MODEL_STATE["model"]
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Modelo ainda não carregado pelo MLflow"
+        )
+
     model_uri: str = MODEL_STATE.get("model_uri", "")
     default_th = float(MODEL_STATE.get("default_threshold", 0.5))
     th = float(threshold) if threshold is not None else default_th
@@ -432,8 +457,14 @@ def predict(
 
     inf_start = time.perf_counter()
     y_prob = predict_proba_pyfunc(model, X, proba_col="y_pred_proba")
+
+    if y_prob is None:
+        raise HTTPException(500, "Modelo retornou None")
+
     INFERENCE_LATENCY_SECONDS.labels(path="/predict").observe(time.perf_counter() - inf_start)
+    y_prob = y_prob.iloc[:, 0] if isinstance(y_prob, pd.DataFrame) else y_prob
     y_pred = (y_prob >= th).astype(int)
+
     PREDICTIONS_TOTAL.labels(path="/predict", predicted_class=str(int(y_pred[0]))).inc()
     latency_ms = (time.perf_counter() - start) * 1000
 
@@ -504,7 +535,12 @@ def predict_batch(
 
     inf_start = time.perf_counter()
     y_prob = predict_proba_pyfunc(model, X, proba_col="y_pred_proba")
+
+    if y_prob is None:
+        raise HTTPException(500, "Modelo retornou None")
+
     INFERENCE_LATENCY_SECONDS.labels(path="/predict_batch").observe(time.perf_counter() - inf_start)
+    y_prob = y_prob.iloc[:, 0] if isinstance(y_prob, pd.DataFrame) else y_prob
     y_pred = (y_prob >= th).astype(int)
 
     for yp in y_pred:
