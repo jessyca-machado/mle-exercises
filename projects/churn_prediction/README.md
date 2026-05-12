@@ -140,7 +140,7 @@ make run-mlflow
 mlflow server --host 0.0.0.0 --port 5001
 ```
 #### Variáveis de ambiente
-- As variáveis de ambiente, via `.env`, foram criadas conforme o tópico [Configurar ambiente].(#configurar-ambiente)
+- As variáveis de ambiente, via `.env`, foram criadas conforme o tópico [Configurar ambiente](#configurar-ambiente).
 
 ### Nota sobre o endpoint `/ready` (warmup do modelo)
 - A API carrega o modelo do MLflow **de forma assíncrona** na inicialização.
@@ -249,12 +249,12 @@ echo
 ```bash
 # PowerShell (Windows)
 Get-Content .env | ForEach-Object {
-  if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return } 
+  if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
   $name, $value = $_ -split '=', 2
   Set-Item "Env:$name" $value
 }
 
-uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload                  
+uvicorn src.api.app:app --host 0.0.0.0 --port 8001 --reload
 
 curl.exe -s -X POST "http://localhost:8001/predict" `
   -H "Content-Type: application/json" `
